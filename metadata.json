@@ -1,0 +1,6 @@
+{
+  "name": "Quizian",
+  "description": "Review smarter, not harder. A gamified study and quiz platform designed for students to turn materials into interactive quizzes and challenge classmates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
