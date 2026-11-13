@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   Quiz, 
   ActivityRecord, 
@@ -8,15 +8,26 @@ import {
   ChallengeRoomState,
   StudyReminderConfig,
   AppNotification,
-  ViewMode
+  StudyMaterial
 } from '../types';
-import { INITIAL_USER, INITIAL_QUIZZES, INITIAL_ACTIVITIES } from '../data/mockData';
+import { INITIAL_USER, INITIAL_QUIZZES, INITIAL_ACTIVITIES, INITIAL_STUDY_MATERIALS } from '../data/mockData';
 import { playNotificationSound } from '../utils/sound';
+import { COINS_PER_CORRECT, POINTS_PER_CORRECT } from '../utils/questionUtils';
+import {
+  getAllStudyMaterialsFromDB,
+  getQuizzesFromDB,
+  getStudyMaterialsFromLocalStorage,
+  saveAllStudyMaterialsToDB,
+  saveQuizzesToDB,
+  saveStudyMaterialToDB,
+  deleteStudyMaterialFromDB,
+} from '../utils/offlineStorage';
 
 export type ActiveTab = 'home' | 'quizzes' | 'challenge' | 'activity' | 'profile';
 export type ActiveScreen = 'main' | 'generate' | 'game' | 'results' | 'review_answers' | 'challenge_waiting';
 
 export interface GameSession {
+  sessionId: string;
   quiz: Quiz;
   mode: 'solo' | 'challenge';
   roomCode?: string;
@@ -28,6 +39,7 @@ export interface GameSession {
 export interface GameResult {
   score: number;
   maxScore: number;
+  coinsEarned: number;
   correctAnswers: number;
   totalQuestions: number;
   accuracy: number;
@@ -36,6 +48,7 @@ export interface GameResult {
   leaderboard: ParticipantScore[];
   quiz: Quiz;
   mode: 'solo' | 'challenge';
+  userPlayerId?: string;
 }
 
 interface AppContextType {
@@ -48,17 +61,15 @@ interface AppContextType {
   logout: () => void;
   quickDemoLogin: (email?: string) => void;
   resetPassword: (email: string, newPass: string) => { success: boolean; message: string };
-  updateProfile: (updates: Partial<UserProfile>) => void;
+  updateProfile: (updates: Partial<UserProfile>, options?: { silent?: boolean }) => void;
 
-  // Navigation & View Mode
-  viewMode: ViewMode;
-  setViewMode: (mode: ViewMode) => void;
+  // Navigation
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
   activeScreen: ActiveScreen;
   setActiveScreen: (screen: ActiveScreen) => void;
 
-  // Quizzes
+  // Quizzes & Study Materials
   quizzes: Quiz[];
   saveQuiz: (quiz: Quiz) => void;
   deleteQuiz: (quizId: string) => void;
@@ -66,6 +77,12 @@ interface AppContextType {
   setEditingQuiz: (quiz: Quiz | null) => void;
   previewQuiz: Quiz | null;
   setPreviewQuiz: (quiz: Quiz | null) => void;
+  studyMaterials: StudyMaterial[];
+  saveStudyMaterial: (material: StudyMaterial) => void;
+  deleteStudyMaterial: (materialId: string) => void;
+  getStudyMaterialForQuiz: (quiz: Quiz) => StudyMaterial | undefined;
+  materialDraftForGeneration: StudyMaterial | null;
+  setMaterialDraftForGeneration: (material: StudyMaterial | null) => void;
 
   // Challenge Flow
   selectedQuizForChallenge: Quiz | null;
@@ -79,6 +96,7 @@ interface AppContextType {
   exitGame: () => void;
   lastResult: GameResult | null;
   finishGame: (result: GameResult) => void;
+  awardQuestionReward: (sessionId: string, questionId: string) => { awarded: boolean; pointsAdded: number; coinsAdded: number };
 
   // Activities
   activities: ActivityRecord[];
@@ -90,7 +108,7 @@ interface AppContextType {
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
   clearNotifications: () => void;
-  updateReminderConfig: (config: Partial<StudyReminderConfig>) => void;
+  updateReminderConfig: (config: Partial<StudyReminderConfig>, options?: { silent?: boolean }) => void;
   triggerStudyReminder: (customTitle?: string, customMessage?: string, forceTest?: boolean) => void;
   requestBrowserNotificationPermission: () => Promise<NotificationPermission>;
   browserPermission: NotificationPermission | 'unsupported';
@@ -108,10 +126,79 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const STORAGE_KEYS = {
   USER: 'quizian_user_session',
   USERS_LIST: 'quizian_registered_users',
+  USER_PROFILES: 'quizian_user_profiles',
+  CLAIMED_REWARDS: 'quizian_claimed_rewards',
   QUIZZES: 'quizian_saved_quizzes',
   ACTIVITIES: 'quizian_user_activities',
   NOTIFICATIONS: 'quizian_notifications',
 };
+
+function ensureUserRewards(profile: UserProfile): UserProfile {
+  return {
+    ...profile,
+    totalPoints: typeof profile.totalPoints === 'number' && Number.isFinite(profile.totalPoints) ? profile.totalPoints : 0,
+    coins: typeof profile.coins === 'number' && Number.isFinite(profile.coins) ? profile.coins : 0,
+  };
+}
+
+function loadUserProfileStore(): Record<string, UserProfile> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.USER_PROFILES);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveUserProfileToStore(profile: UserProfile): void {
+  const normalized = ensureUserRewards(profile);
+  const key = normalized.email.trim().toLowerCase();
+  if (!key) return;
+  try {
+    const store = loadUserProfileStore();
+    store[key] = normalized;
+    localStorage.setItem(STORAGE_KEYS.USER_PROFILES, JSON.stringify(store));
+
+    const rawList = localStorage.getItem(STORAGE_KEYS.USERS_LIST);
+    if (rawList) {
+      const list = JSON.parse(rawList);
+      if (Array.isArray(list)) {
+        const updatedList = list.map((entry: any) =>
+          entry?.email?.toLowerCase?.() === key ? { ...entry, profile: normalized } : entry
+        );
+        localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(updatedList));
+      }
+    }
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function sanitizeStoredQuizzes(rawQuizzes: Quiz[]): Quiz[] {
+  return rawQuizzes.map((quiz) => ({
+    ...quiz,
+    questions: (quiz.questions || []).map((q) => {
+      const rawType = q.type as string;
+      if (rawType === 'multiple_choice') {
+        return q;
+      }
+      if (rawType === 'fill_blank' || rawType === 'identification' || rawType === 'scrambled_word') {
+        return q.options && q.options.length > 0 ? { ...q, options: [] } : q;
+      }
+      // Migrate any legacy removed question types cleanly
+      return {
+        id: q.id,
+        type: 'identification',
+        question: q.question,
+        options: [],
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+      };
+    }),
+  }));
+}
 
 const INITIAL_NOTIFICATIONS: AppNotification[] = [
   {
@@ -138,7 +225,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(STORAGE_KEYS.USER);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = ensureUserRewards(JSON.parse(saved));
+        const store = loadUserProfileStore();
+        const storedForEmail = store[parsed.email.trim().toLowerCase()];
+        return storedForEmail ? ensureUserRewards({ ...parsed, ...storedForEmail }) : parsed;
       } catch (e) {
         return null;
       }
@@ -146,21 +236,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return null;
   });
 
-  const [authView, setAuthView] = useState<'login' | 'signup' | 'forgot_password'>('login');
-
-  // View Mode: 'phone' (mobile simulator on desktop) vs 'desktop' (standard fullscreen)
-  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem('quizian_view_mode');
-    if (saved === 'desktop' || saved === 'phone') {
-      return saved;
+  const claimedRewardsRef = useRef<Set<string>>((() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.CLAIMED_REWARDS);
+      if (!raw) return new Set<string>();
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? new Set<string>(parsed.map(String)) : new Set<string>();
+    } catch {
+      return new Set<string>();
     }
-    return 'phone'; // Default to phone view per user request
-  });
+  })());
 
-  const setViewMode = (mode: ViewMode) => {
-    setViewModeState(mode);
-    localStorage.setItem('quizian_view_mode', mode);
-  };
+  const [authView, setAuthView] = useState<'login' | 'signup' | 'forgot_password'>('login');
 
   // Navigation
   const [activeTab, setActiveTabState] = useState<ActiveTab>('home');
@@ -171,7 +258,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(STORAGE_KEYS.QUIZZES);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        return sanitizeStoredQuizzes(JSON.parse(saved));
       } catch (e) {
         return INITIAL_QUIZZES;
       }
@@ -181,6 +268,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
   const [previewQuiz, setPreviewQuiz] = useState<Quiz | null>(null);
+
+  // Study Materials (persisted in localStorage + IndexedDB for large offline files)
+  const [studyMaterials, setStudyMaterials] = useState<StudyMaterial[]>(() => {
+    const saved = getStudyMaterialsFromLocalStorage();
+    return saved && saved.length > 0 ? saved : INITIAL_STUDY_MATERIALS;
+  });
+  const [materialDraftForGeneration, setMaterialDraftForGeneration] = useState<StudyMaterial | null>(null);
 
   // Challenge state
   const [selectedQuizForChallenge, setSelectedQuizForChallenge] = useState<Quiz | null>(null);
@@ -227,26 +321,80 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (msg: string) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage((prev) => (prev === msg ? null : prev));
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
     }, 3500);
   };
 
-  // Sync state to local storage
+  // Sync theme to document root
+  useEffect(() => {
+    const activeTheme = user?.settings?.theme || 'cream';
+    document.documentElement.setAttribute('data-theme', activeTheme);
+  }, [user?.settings?.theme]);
+
+  // Sync state to local storage & persistent per-account profile store
   useEffect(() => {
     if (user) {
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+      const normalized = ensureUserRewards(user);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(normalized));
+      saveUserProfileToStore(normalized);
     } else {
       localStorage.removeItem(STORAGE_KEYS.USER);
     }
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify(quizzes));
+    try {
+      localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify(quizzes));
+    } catch {
+      // Ignore storage quota overflow; IndexedDB still stores full quizzes
+    }
+    void saveQuizzesToDB(quizzes);
   }, [quizzes]);
+
+  useEffect(() => {
+    void saveAllStudyMaterialsToDB(studyMaterials);
+  }, [studyMaterials]);
+
+  // Hydrate full quizzes & study materials (including PDF/image blobs) from IndexedDB on mount
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const [dbQuizzes, dbMaterials] = await Promise.all([
+        getQuizzesFromDB(),
+        getAllStudyMaterialsFromDB(),
+      ]);
+      if (!active) return;
+
+      if (dbQuizzes && dbQuizzes.length > 0 && !localStorage.getItem(STORAGE_KEYS.QUIZZES)) {
+        setQuizzes(dbQuizzes);
+      }
+
+      if (dbMaterials && dbMaterials.length > 0) {
+        setStudyMaterials((prev) => {
+          const map = new Map<string, StudyMaterial>();
+          for (const m of prev) map.set(m.id, m);
+          for (const m of dbMaterials) {
+            const existing = map.get(m.id);
+            map.set(m.id, { ...existing, ...m });
+          }
+          return Array.from(map.values()).sort((a, b) =>
+            (b.updatedAt || '').localeCompare(a.updatedAt || '')
+          );
+        });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities));
@@ -268,11 +416,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'Please enter both email and password.' };
     }
 
+    const profileStore = loadUserProfileStore();
+
     // Default demo account
     if (cleanEmail === 'matteollanora@gmail.com' && pass.length >= 6) {
-      setUser(INITIAL_USER);
+      const restored = profileStore[cleanEmail] ? ensureUserRewards(profileStore[cleanEmail]) : INITIAL_USER;
+      saveUserProfileToStore(restored);
+      setUser(restored);
       setActiveScreen('main');
-      showToast('Welcome back, Matteo!');
+      showToast(`Welcome back, ${restored.name.split(' ')[0]}!`);
       return { success: true };
     }
 
@@ -284,9 +436,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const match = users.find((u: any) => u.email.toLowerCase() === cleanEmail);
         if (match) {
           if (match.password === pass) {
-            setUser(match.profile);
+            const storedProfile = profileStore[cleanEmail];
+            const restored = ensureUserRewards(storedProfile ? { ...match.profile, ...storedProfile } : match.profile);
+            saveUserProfileToStore(restored);
+            setUser(restored);
             setActiveScreen('main');
-            showToast(`Welcome back, ${match.profile.name}!`);
+            showToast(`Welcome back, ${restored.name}!`);
             return { success: true };
           }
           return { success: false, error: 'Incorrect email or password.' };
@@ -305,6 +460,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'Password must be at least 6 characters.' };
     }
 
+    if (profileStore[cleanEmail]) {
+      const restored = ensureUserRewards(profileStore[cleanEmail]);
+      setUser(restored);
+      setActiveScreen('main');
+      showToast(`Welcome back, ${restored.name}!`);
+      return { success: true };
+    }
+
     const nameParts = cleanEmail.split('@')[0].replace(/[._-]/g, ' ');
     const formattedName = nameParts.charAt(0).toUpperCase() + nameParts.slice(1);
     const newUser: UserProfile = {
@@ -313,6 +476,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       email: cleanEmail,
       avatar: (formattedName || 'S').charAt(0).toUpperCase(),
       role: 'student',
+      totalPoints: 0,
+      coins: 0,
       school: 'University Student',
       bio: 'Studying smart on Quizian 🚀',
       settings: {
@@ -332,6 +497,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
     };
 
+    saveUserProfileToStore(newUser);
     setUser(newUser);
     setActiveScreen('main');
     showToast(`Welcome to Quizian, ${newUser.name}!`);
@@ -359,6 +525,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       email: cleanEmail,
       avatar: cleanName.charAt(0).toUpperCase(),
       role: 'student',
+      totalPoints: 0,
+      coins: 0,
       school: 'Student Member',
       bio: 'Ready to turn study notes into mastery ✨',
       settings: {
@@ -381,12 +549,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.USERS_LIST);
       const list = raw ? JSON.parse(raw) : [];
-      list.push({ email: cleanEmail, password: pass, profile: newUser });
-      localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(list));
+      const filtered = Array.isArray(list)
+        ? list.filter((u: any) => u?.email?.toLowerCase?.() !== cleanEmail)
+        : [];
+      filtered.push({ email: cleanEmail, password: pass, profile: newUser });
+      localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(filtered));
     } catch (e) {
       // pass
     }
 
+    saveUserProfileToStore(newUser);
     setUser(newUser);
     setActiveTabState('home');
     setActiveScreen('main');
@@ -395,6 +567,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
+    if (user) {
+      saveUserProfileToStore(user);
+    }
     setUser(null);
     setCurrentGameSession(null);
     setCurrentRoom(null);
@@ -404,10 +579,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const quickDemoLogin = (email = 'matteollanora@gmail.com') => {
-    if (email === 'matteollanora@gmail.com') {
+    const cleanEmail = email.trim().toLowerCase();
+    const profileStore = loadUserProfileStore();
+
+    if (profileStore[cleanEmail]) {
+      const restored = ensureUserRewards(profileStore[cleanEmail]);
+      setUser(restored);
+    } else if (cleanEmail === 'matteollanora@gmail.com') {
+      saveUserProfileToStore(INITIAL_USER);
       setUser(INITIAL_USER);
     } else {
-      setUser({
+      const sarahProfile: UserProfile = {
         id: 'user-demo-sarah',
         name: 'Sarah Chen',
         email: 'sarah.chen@campus.edu',
@@ -415,6 +597,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         school: 'University of Science & Tech',
         bio: 'Pre-med & Neuroscience • Quizian enthusiast 🧠',
         role: 'student',
+        totalPoints: 75,
+        coins: 75,
         settings: {
           notifications: true,
           challengeAlerts: true,
@@ -430,7 +614,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             soundEnabled: true,
           },
         },
-      });
+      };
+      saveUserProfileToStore(sarahProfile);
+      setUser(sarahProfile);
     }
     setActiveTabState('home');
     setActiveScreen('main');
@@ -448,11 +634,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Your password has been reset successfully. You can now log in.' };
   };
 
-  const updateProfile = (updates: Partial<UserProfile>) => {
-    if (!user) return;
-    const updated = { ...user, ...updates };
-    setUser(updated);
-    showToast('Settings saved.');
+  const updateProfile = (updates: Partial<UserProfile>, options?: { silent?: boolean }) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = ensureUserRewards({ ...prev, ...updates });
+      saveUserProfileToStore(updated);
+      return updated;
+    });
+    if (!options?.silent) {
+      showToast('Settings saved.');
+    }
+  };
+
+  const awardQuestionReward = (sessionId: string, questionId: string) => {
+    const activeUserId = user?.id || 'guest';
+    const rewardKey = `${activeUserId}:${sessionId}:${questionId}`;
+    if (claimedRewardsRef.current.has(rewardKey)) {
+      return { awarded: false, pointsAdded: 0, coinsAdded: 0 };
+    }
+
+    claimedRewardsRef.current.add(rewardKey);
+    try {
+      const keys = Array.from(claimedRewardsRef.current).slice(-500);
+      localStorage.setItem(STORAGE_KEYS.CLAIMED_REWARDS, JSON.stringify(keys));
+    } catch {
+      // Ignore storage quota errors
+    }
+
+    setUser((prev) => {
+      if (!prev) return prev;
+      const base = ensureUserRewards(prev);
+      const updated: UserProfile = {
+        ...base,
+        totalPoints: base.totalPoints + POINTS_PER_CORRECT,
+        coins: base.coins + COINS_PER_CORRECT,
+      };
+      saveUserProfileToStore(updated);
+      return updated;
+    });
+
+    return {
+      awarded: true,
+      pointsAdded: POINTS_PER_CORRECT,
+      coinsAdded: COINS_PER_CORRECT,
+    };
   };
 
   // Quizzes management
@@ -470,6 +695,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteQuiz = (quizId: string) => {
     setQuizzes((prev) => prev.filter((q) => q.id !== quizId));
     showToast('Quiz deleted.');
+  };
+
+  const saveStudyMaterial = (material: StudyMaterial) => {
+    setStudyMaterials((prev) => {
+      const exists = prev.some((m) => m.id === material.id);
+      if (exists) {
+        return prev.map((m) => (m.id === material.id ? material : m));
+      }
+      return [material, ...prev];
+    });
+    void saveStudyMaterialToDB(material);
+  };
+
+  const deleteStudyMaterial = (materialId: string) => {
+    setStudyMaterials((prev) => prev.filter((m) => m.id !== materialId));
+    void deleteStudyMaterialFromDB(materialId);
+    showToast('Study material removed from offline storage.');
+  };
+
+  const getStudyMaterialForQuiz = (quiz: Quiz): StudyMaterial | undefined => {
+    if (quiz.studyMaterialId) {
+      const byId = studyMaterials.find((m) => m.id === quiz.studyMaterialId);
+      if (byId) return byId;
+    }
+    return studyMaterials.find((m) => m.quizId === quiz.id);
   };
 
   // Game flow
@@ -547,7 +797,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setLastResult(null); // Reset previous match result
+    const sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setCurrentGameSession({
+      sessionId,
       quiz,
       mode,
       roomCode: room?.code,
@@ -565,7 +817,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const finishGame = (result: GameResult) => {
-    setLastResult(result);
+    const playerId = result.userPlayerId || currentGameSession?.userPlayerId || user?.id || 'player-user';
+    const enrichedResult: GameResult = {
+      ...result,
+      userPlayerId: playerId,
+    };
+    setLastResult(enrichedResult);
+    setCurrentGameSession(null);
+
+    const foundRank = result.leaderboard.findIndex(
+      (p) => p.id === playerId || p.name === (user?.name || 'Matteo Llanora')
+    );
 
     const newActivity: ActivityRecord = {
       id: `act-${Date.now()}`,
@@ -575,12 +837,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: Date.now(),
       score: result.score,
       maxScore: result.maxScore,
+      coinsEarned: result.coinsEarned,
       correctCount: result.correctAnswers,
       totalQuestions: result.totalQuestions,
       accuracy: result.accuracy,
       type: result.mode,
-      opponentCount: result.leaderboard.length - 1,
-      rank: result.leaderboard.findIndex((p) => p.id === (user?.id || 'player-user') || p.name === (user?.name || 'Matteo Llanora')) + 1 || 1,
+      opponentCount: Math.max(0, result.leaderboard.length - 1),
+      rank: foundRank >= 0 ? foundRank + 1 : 1,
       leaderboard: result.leaderboard,
       questionsSnapshot: result.quiz.questions,
       userAnswers: result.userAnswers,
@@ -619,24 +882,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Notifications cleared.');
   };
 
-  const updateReminderConfig = (configUpdates: Partial<StudyReminderConfig>) => {
-    if (!user) return;
-    const currentConfig = user.settings.reminderConfig || {
-      enabled: true,
-      time: '19:30',
-      days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-      goal: 'Daily Quiz Review & Active Recall',
-      browserNotifications: false,
-      soundEnabled: true,
-    };
-    const newConfig = { ...currentConfig, ...configUpdates };
-    updateProfile({
-      settings: {
-        ...user.settings,
-        studyReminders: newConfig.enabled,
-        reminderConfig: newConfig,
-      },
+  const updateReminderConfig = (configUpdates: Partial<StudyReminderConfig>, options?: { silent?: boolean }) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const currentConfig = prev.settings.reminderConfig || {
+        enabled: true,
+        time: '19:30',
+        days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        goal: 'Daily Quiz Review & Active Recall',
+        browserNotifications: false,
+        soundEnabled: true,
+      };
+      const newConfig = { ...currentConfig, ...configUpdates };
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          studyReminders: newConfig.enabled,
+          reminderConfig: newConfig,
+        },
+      };
     });
+    if (!options?.silent) {
+      showToast('Settings saved.');
+    }
   };
 
   const triggerStudyReminder = (customTitle?: string, customMessage?: string, forceTest = false) => {
@@ -672,7 +941,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         new Notification(title, {
           body: message,
-          icon: '/favicon.ico',
+          icon: '/assets/aistudio/download__3__de814aad.jfif',
         });
       } catch (e) {
         // pass
@@ -739,7 +1008,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const todayDateStr = now.toISOString().split('T')[0];
 
       if (currentTimeStr === config.time && config.lastTriggeredDate !== todayDateStr) {
-        updateReminderConfig({ lastTriggeredDate: todayDateStr });
+        updateReminderConfig({ lastTriggeredDate: todayDateStr }, { silent: true });
         triggerStudyReminder();
       }
     };
@@ -747,7 +1016,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     checkReminder();
     const interval = setInterval(checkReminder, 15000);
     return () => clearInterval(interval);
-  }, [user?.settings?.reminderConfig?.enabled, user?.settings?.reminderConfig?.time, user?.settings?.reminderConfig?.days]);
+  }, [user?.settings?.reminderConfig?.enabled, user?.settings?.reminderConfig?.time, user?.settings?.reminderConfig?.days, user?.settings?.reminderConfig?.lastTriggeredDate]);
 
   return (
     <AppContext.Provider
@@ -761,8 +1030,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         quickDemoLogin,
         resetPassword,
         updateProfile,
-        viewMode,
-        setViewMode,
         activeTab,
         setActiveTab,
         activeScreen,
@@ -774,6 +1041,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setEditingQuiz,
         previewQuiz,
         setPreviewQuiz,
+        studyMaterials,
+        saveStudyMaterial,
+        deleteStudyMaterial,
+        getStudyMaterialForQuiz,
+        materialDraftForGeneration,
+        setMaterialDraftForGeneration,
         selectedQuizForChallenge,
         setSelectedQuizForChallenge,
         currentRoom,
@@ -783,6 +1056,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         exitGame,
         lastResult,
         finishGame,
+        awardQuestionReward,
         activities,
         clearActivities,
         notifications,

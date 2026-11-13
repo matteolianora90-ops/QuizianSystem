@@ -1,4 +1,5 @@
 import express from 'express';
+import { createServer as createHttpServer } from 'http';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -67,6 +68,13 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+const ALLOWED_TYPES = new Set([
+  'multiple_choice',
+  'fill_blank',
+  'identification',
+  'scrambled_word',
+]);
+
 // AI Quiz Generation Endpoint
 app.post('/api/generate-quiz', async (req, res) => {
   try {
@@ -74,56 +82,77 @@ app.post('/api/generate-quiz', async (req, res) => {
       materialText,
       imageBase64,
       imageMimeType,
+      fileBase64,
+      fileMimeType,
       questionTypes = ['multiple_choice'],
       questionCount = 5,
       difficulty = 'Medium',
       title = 'Study Quiz',
     } = req.body;
 
-    const count = Math.min(Math.max(parseInt(questionCount, 10) || 5, 2), 20);
+    const count = Math.min(Math.max(parseInt(questionCount, 10) || 5, 2), 30);
+    const filteredTypes: string[] = Array.isArray(questionTypes)
+      ? questionTypes.filter((t): t is string => typeof t === 'string' && ALLOWED_TYPES.has(t))
+      : [];
+    const requestedTypes: string[] =
+      filteredTypes.length > 0 ? filteredTypes : ['multiple_choice'];
+    const mediaData = fileBase64 || imageBase64;
+    const mediaMime = fileMimeType || imageMimeType;
 
     // If Gemini is available, generate real questions with Gemini 3.8 Flash
     if (ai) {
       try {
-        const typesStr = Array.isArray(questionTypes) ? questionTypes.join(', ') : questionTypes;
-        const systemInstruction = `You are Quizian's AI Educational Study Assistant. 
-Generate a high-quality educational quiz based STRICTLY on the user's provided study notes or media.
-Difficulty level: ${difficulty}.
-Number of questions: ${count}.
-Requested Question Types: ${typesStr} (can include multiple_choice, fill_blank, identification, scrambled_word).
+        const typesStr = requestedTypes.join(', ');
+        const systemInstruction = `You are Quizian's AI Educational Study Assistant.
+Generate a high-quality educational quiz based STRICTLY on the user's provided study material (text, document, PDF, or image).
+Difficulty level: ${difficulty} (Easy = direct recall & clear terms; Medium = comprehension & applied concepts; Hard = analytical, multi-concept, nuanced distinctions).
+Exact number of questions required: ${count}.
+Requested Question Types: ${typesStr}.
 
-Rules:
-1. Every question must have:
-   - id: unique string
-   - type: one of 'multiple_choice', 'fill_blank', 'identification', 'scrambled_word'
-   - question: clear, engaging question text
-   - options: array of 4 choices for 'multiple_choice', or empty array for other types
-   - correctAnswer: the correct answer string (must match one of the options exactly for multiple_choice)
-   - explanation: short 1-2 sentence explanation of why this answer is correct
-   - scrambledClue: if type is scrambled_word, include a hint and the scrambled letters
-2. For multiple_choice: include 1 correct answer and 3 plausible distractors.
-3. For fill_blank: create sentences with a missing term represented as "____".
-4. For identification: formulate a clear definition or concept description.
-5. Return ONLY a valid JSON object matching the requested schema.`;
+Supported Question Types & Exact Structure:
+1. 'multiple_choice':
+   - options: array of 4 plausible choices (1 correct, 3 distinct distractors)
+   - correctAnswer: exact string matching one of the 4 options
+2. 'fill_blank':
+   - question: sentence with missing keyword replaced by "____"
+   - options: []
+   - correctAnswer: the missing keyword/phrase
+3. 'identification':
+   - question: clear definition, function, or description asking the student to identify the term/concept
+   - options: []
+   - correctAnswer: the exact term/concept name
+4. 'scrambled_word':
+   - question: prompt containing the scrambled uppercase letters in brackets, e.g. [ S P C E R O S ]
+   - scrambledClue: helpful hint grounded in the material
+   - options: []
+   - correctAnswer: the unscrambled uppercase term
+
+CRITICAL RULES:
+- Generate EXACTLY ${count} questions.
+- Use ONLY the requested question types (${typesStr}) and distribute them evenly across all ${count} questions.
+- Every single question MUST be grounded in the provided study material.
+- NEVER generate duplicate or nearly identical questions, repeated answers, or rephrased copies.
+- Every question needs a unique id, clear question text, correctAnswer, and a concise 1-2 sentence explanation.
+- Return ONLY a valid JSON object matching the schema.`;
 
         let contents: any;
-        if (imageBase64 && imageMimeType) {
-          const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+        if (mediaData && mediaMime) {
+          const cleanBase64 = mediaData.replace(/^data:[^;]+;base64,/, '');
           contents = {
             parts: [
               {
                 inlineData: {
-                  mimeType: imageMimeType,
+                  mimeType: mediaMime,
                   data: cleanBase64,
                 },
               },
               {
-                text: `Create ${count} quiz questions based on this study image. Difficulty: ${difficulty}. Additional notes: ${materialText || 'None'}. Output valid JSON.`,
+                text: `Create EXACTLY ${count} unique, non-duplicate quiz questions strictly from this uploaded study material. Difficulty: ${difficulty}. Allowed types: ${typesStr}. Additional extracted text/notes: ${materialText || 'None'}. Output valid JSON with exactly ${count} items in the questions array.`,
               },
             ],
           };
         } else {
-          contents = `Study material:\n${materialText || 'General Knowledge and Computer Science Concepts'}\n\nPlease generate ${count} quiz questions.`;
+          contents = `Study material:\n${materialText || 'General Knowledge Study Notes'}\n\nGenerate EXACTLY ${count} unique, non-duplicate quiz questions strictly based on the study material above. Difficulty: ${difficulty}. Allowed question types: ${typesStr}.`;
         }
 
         const response = await ai.models.generateContent({
@@ -164,11 +193,20 @@ Rules:
         const text = response.text;
         if (text) {
           const parsed = JSON.parse(text);
+          const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+          const normalized = normalizeAndEnsureCount(
+            rawQuestions,
+            materialText || 'General Study Material',
+            count,
+            requestedTypes,
+            difficulty
+          );
+
           return res.json({
             success: true,
             source: 'gemini',
             quizTitle: parsed.quizTitle || title,
-            questions: parsed.questions || [],
+            questions: normalized,
           });
         }
       } catch (geminiError: any) {
@@ -180,7 +218,7 @@ Rules:
     const fallbackQuestions = generateSmartFallbackQuestions(
       materialText || 'General Knowledge Study Notes',
       count,
-      questionTypes,
+      requestedTypes,
       difficulty
     );
 
@@ -199,139 +237,213 @@ Rules:
   }
 });
 
-// Helper for smart local educational question generation
+function normalizeQuestionItem(q: any, idx: number, allowedTypes: string[]): any {
+  const safeType = ALLOWED_TYPES.has(q?.type) ? q.type : allowedTypes[idx % allowedTypes.length] || 'multiple_choice';
+  const base: any = {
+    id: q?.id ? `${q.id}-${idx}` : `q-${Date.now()}-${idx}`,
+    type: safeType,
+    question: String(q?.question || '').trim(),
+    options: Array.isArray(q?.options) ? q.options.map(String).filter(Boolean) : [],
+    correctAnswer: String(q?.correctAnswer || '').trim(),
+    explanation: String(q?.explanation || '').trim() || 'Grounded in your uploaded study material.',
+  };
+
+  if (q?.scrambledClue) {
+    base.scrambledClue = String(q.scrambledClue).trim();
+  }
+
+  if (safeType === 'multiple_choice') {
+    if (base.options.length < 2) {
+      base.options = [base.correctAnswer || 'Option A', 'Option B', 'Option C', 'Option D'];
+    }
+    if (base.correctAnswer && !base.options.includes(base.correctAnswer)) {
+      base.options[0] = base.correctAnswer;
+    }
+    if (!base.correctAnswer && base.options.length > 0) {
+      base.correctAnswer = base.options[0];
+    }
+  } else {
+    base.options = [];
+  }
+
+  return base;
+}
+
+function normalizeAndEnsureCount(
+  rawQuestions: any[],
+  materialText: string,
+  count: number,
+  allowedTypes: string[],
+  difficulty: string
+) {
+  const seenPrompts = new Set<string>();
+  const result: any[] = [];
+
+  for (let i = 0; i < rawQuestions.length && result.length < count; i++) {
+    const normalized = normalizeQuestionItem(rawQuestions[i], i, allowedTypes);
+    if (!normalized.question || !normalized.correctAnswer) continue;
+    const key = normalized.question.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 90);
+    if (seenPrompts.has(key)) continue;
+    seenPrompts.add(key);
+    result.push(normalized);
+  }
+
+  if (result.length < count) {
+    const topUp = generateSmartFallbackQuestions(
+      materialText,
+      count + 10,
+      allowedTypes,
+      difficulty
+    );
+    for (const candidate of topUp) {
+      if (result.length >= count) break;
+      const key = candidate.question.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 90);
+      if (!seenPrompts.has(key)) {
+        seenPrompts.add(key);
+        result.push({ ...candidate, id: `q-${Date.now()}-${result.length}` });
+      }
+    }
+  }
+
+  return result.slice(0, count);
+}
+
+// Helper for smart local educational question generation grounded in the material
 function generateSmartFallbackQuestions(
   text: string,
   count: number,
   types: string[],
   difficulty: string
 ) {
-  // Extract key sentences / concepts from text
   const cleanText = text.trim();
-  const sentences = cleanText
-    .split(/[.?!]\s+/)
+  const segments = cleanText
+    .replace(/\r\n/g, '\n')
+    .split(/(?<=[.?!])\s+|\n+|;\s+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 20);
+    .filter((s) => s.length > 18);
 
-  const pool = [
-    {
-      q: 'Which component is considered the primary identifier for records in a relational database?',
-      options: ['Primary Key', 'Foreign Key', 'Composite Index', 'Candidate Key'],
-      correct: 'Primary Key',
-      explanation: 'A primary key uniquely identifies each record in a database table.',
-      type: 'multiple_choice',
-    },
-    {
-      q: 'In software architecture, what does the acronym API stand for?',
-      options: ['Application Programming Interface', 'Automated Program Integration', 'Advanced Protocol Interaction', 'Applied Process Instruction'],
-      correct: 'Application Programming Interface',
-      explanation: 'An API allows different software applications to communicate with each other.',
-      type: 'multiple_choice',
-    },
-    {
-      q: 'A ____ is a data structure that follows the Last In, First Out (LIFO) principle.',
-      options: ['Stack', 'Queue', 'Array', 'Linked List'],
-      correct: 'Stack',
-      explanation: 'In a stack, the last element added is the first one to be removed.',
-      type: 'fill_blank',
-    },
-    {
-      q: 'Identify the principle in object-oriented programming that bundles data and methods together.',
-      options: ['Encapsulation', 'Polymorphism', 'Inheritance', 'Abstraction'],
-      correct: 'Encapsulation',
-      explanation: 'Encapsulation keeps internal state hidden and bundles behavior with data.',
-      type: 'identification',
-    },
-    {
-      q: 'Unscramble the fundamental building block of the World Wide Web: [M H T L]',
-      options: ['HTML', 'HTTP', 'HTTPS', 'HLTM'],
-      correct: 'HTML',
-      explanation: 'HTML stands for HyperText Markup Language, the standard markup language for documents on the web.',
-      type: 'scrambled_word',
-      scrambledClue: 'Markup language for web pages',
-    },
-    {
-      q: 'What is the time complexity of searching an element in a balanced Binary Search Tree?',
-      options: ['O(log n)', 'O(n)', 'O(1)', 'O(n^2)'],
-      correct: 'O(log n)',
-      explanation: 'Balanced BSTs halve the search space at each step, yielding logarithmic time.',
-      type: 'multiple_choice',
-    },
-    {
-      q: '____ is an HTTP status code indicating that the requested resource could not be found.',
-      options: ['404 Not Found', '200 OK', '500 Internal Server Error', '403 Forbidden'],
-      correct: '404 Not Found',
-      explanation: '404 signifies that the origin server did not find a current representation for the target resource.',
-      type: 'fill_blank',
-    },
-    {
-      q: 'Identify the process of converting human-readable source code into machine code.',
-      options: ['Compilation', 'Interpretation', 'Transpilation', 'Serialization'],
-      correct: 'Compilation',
-      explanation: 'A compiler translates source code written in a high-level language into machine code.',
-      type: 'identification',
-    },
-  ];
+  const uniqueKeywords = Array.from(
+    new Set(
+      cleanText
+        .split(/[^a-zA-Z0-9-]+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length >= 5 && !/^\d+$/.test(w))
+    )
+  );
 
-  // If text contains sentences, generate dynamic contextual questions from the sentences!
-  const questions: any[] = [];
-  let index = 0;
-
-  for (let i = 0; i < count; i++) {
-    const chosenType = Array.isArray(types) && types.length > 0 ? types[i % types.length] : 'multiple_choice';
-    if (i < sentences.length && sentences[i].length > 25) {
-      const sentence = sentences[i];
-      const words = sentence.split(/\s+/).filter((w) => w.length > 4);
-      const keyWord = words[Math.floor(words.length / 2)]?.replace(/[^a-zA-Z]/g, '') || 'Concept';
-
-      if (chosenType === 'fill_blank') {
-        const maskedSentence = sentence.replace(new RegExp(`\\b${keyWord}\\b`, 'i'), '____');
-        questions.push({
-          id: `q-${Date.now()}-${i}`,
-          type: 'fill_blank',
-          question: `Fill in the blank: ${maskedSentence}`,
-          options: [keyWord, 'Algorithm', 'Parameter', 'Variable'],
-          correctAnswer: keyWord,
-          explanation: `From study notes: "${sentence}"`,
-        });
-        continue;
-      } else if (chosenType === 'scrambled_word') {
-        const scrambled = keyWord.toUpperCase().split('').sort(() => 0.5 - Math.random()).join(' ');
-        questions.push({
-          id: `q-${Date.now()}-${i}`,
-          type: 'scrambled_word',
-          question: `Unscramble this term from your notes: [ ${scrambled} ]`,
-          options: [keyWord.toUpperCase(), 'SYSTEM', 'PROCESS', 'STRUCTURE'],
-          correctAnswer: keyWord.toUpperCase(),
-          explanation: `The term '${keyWord}' was referenced in: "${sentence.slice(0, 80)}..."`,
-          scrambledClue: `Derived from your notes`,
-        });
-        continue;
-      } else if (chosenType === 'identification') {
-        questions.push({
-          id: `q-${Date.now()}-${i}`,
-          type: 'identification',
-          question: `Identify the term described: "${sentence}"`,
-          options: [keyWord, 'Analysis', 'Framework', 'Syntax'],
-          correctAnswer: keyWord,
-          explanation: `This corresponds to: "${sentence}"`,
-        });
-        continue;
+  const pickDistractors = (answer: string, offset: number): string[] => {
+    const picked: string[] = [];
+    for (let j = 0; j < uniqueKeywords.length && picked.length < 3; j++) {
+      const candidate = uniqueKeywords[(offset + j) % uniqueKeywords.length];
+      if (candidate.toLowerCase() !== answer.toLowerCase() && !picked.includes(candidate)) {
+        picked.push(candidate);
       }
     }
+    const defaults = ['Process', 'Framework', 'Architecture', 'Component', 'Principle'];
+    for (const def of defaults) {
+      if (picked.length >= 3) break;
+      if (def.toLowerCase() !== answer.toLowerCase() && !picked.includes(def)) {
+        picked.push(def);
+      }
+    }
+    return [answer, ...picked.slice(0, 3)].sort((a, b) => a.localeCompare(b));
+  };
 
-    // Pull from curated knowledge base
-    const template = pool[index % pool.length];
-    index++;
-    questions.push({
-      id: `q-${Date.now()}-${i}`,
-      type: template.type || chosenType,
-      question: template.q,
-      options: template.options,
-      correctAnswer: template.correct,
-      explanation: template.explanation,
-      scrambledClue: (template as any).scrambledClue,
-    });
+  const questions: any[] = [];
+  const usedQuestions = new Set<string>();
+  const filteredFallbackTypes = Array.isArray(types)
+    ? types.filter((t) => ALLOWED_TYPES.has(t))
+    : [];
+  const activeTypes = filteredFallbackTypes.length > 0 ? filteredFallbackTypes : ['multiple_choice'];
+
+  const totalSegments = Math.max(segments.length, 1);
+
+  for (let i = 0; i < count; i++) {
+    const chosenType = activeTypes[i % activeTypes.length];
+    const segIdx = i % totalSegments;
+    const sentence = segments[segIdx] || cleanText || 'Core study concepts and terminology';
+    const passNumber = Math.floor(i / totalSegments);
+
+    const words = sentence
+      .split(/\s+/)
+      .map((w) => w.replace(/[^a-zA-Z0-9-]/g, ''))
+      .filter((w) => w.length >= 4);
+
+    const wordIdx = words.length > 0 ? (Math.floor(words.length / 2) + passNumber) % words.length : 0;
+    const keyWord =
+      words[wordIdx] ||
+      uniqueKeywords[i % Math.max(uniqueKeywords.length, 1)] ||
+      `Concept${i + 1}`;
+
+    let item: any;
+
+    if (chosenType === 'fill_blank') {
+      const masked = sentence.replace(new RegExp(`\\b${keyWord}\\b`, 'i'), '____');
+      item = {
+        id: `q-${Date.now()}-${i}`,
+        type: 'fill_blank',
+        question: masked.includes('____')
+          ? `Fill in the blank (${i + 1}): ${masked}`
+          : `Complete the key term (${i + 1}): ____ relates to "${sentence}"`,
+        options: [],
+        correctAnswer: keyWord,
+        explanation: `From study material: "${sentence}"`,
+      };
+    } else if (chosenType === 'scrambled_word') {
+      const upper = keyWord.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'CONCEPT';
+      const chars = upper.split('');
+      for (let c = chars.length - 1; c > 0; c--) {
+        const swap = (c + i * 3 + 1) % (c + 1);
+        const tmp = chars[c];
+        chars[c] = chars[swap];
+        chars[swap] = tmp;
+      }
+      if (chars.join('') === upper && chars.length > 1) {
+        const idxSwap = chars.findIndex((ch) => ch !== chars[0]);
+        if (idxSwap > 0) {
+          const tmp = chars[0];
+          chars[0] = chars[idxSwap];
+          chars[idxSwap] = tmp;
+        }
+      }
+      const scrambled = chars.join(' ');
+      item = {
+        id: `q-${Date.now()}-${i}`,
+        type: 'scrambled_word',
+        question: `Unscramble this key term from your material (${i + 1}): [ ${scrambled} ]`,
+        options: [],
+        correctAnswer: upper,
+        explanation: `The term "${upper}" appears in: "${sentence}"`,
+        scrambledClue: `Context: ${sentence.slice(0, 75)}${sentence.length > 75 ? '...' : ''}`,
+      };
+    } else if (chosenType === 'identification') {
+      item = {
+        id: `q-${Date.now()}-${i}`,
+        type: 'identification',
+        question: `Identify the term described in your study material (${i + 1}): "${sentence.replace(new RegExp(`\\b${keyWord}\\b`, 'gi'), 'this concept')}"`,
+        options: [],
+        correctAnswer: keyWord,
+        explanation: `Refers to "${keyWord}" in: "${sentence}"`,
+      };
+    } else {
+      const maskedPrompt = sentence.replace(new RegExp(`\\b${keyWord}\\b`, 'i'), '____');
+      item = {
+        id: `q-${Date.now()}-${i}`,
+        type: 'multiple_choice',
+        question: maskedPrompt.includes('____')
+          ? `Which term completes this statement from your study material? (${i + 1})\n"${maskedPrompt}"`
+          : `According to your study material, which key term matches: "${sentence}"? (${i + 1})`,
+        options: pickDistractors(keyWord, i),
+        correctAnswer: keyWord,
+        explanation: `From study material: "${sentence}"`,
+      };
+    }
+
+    const dedupeKey = item.question.toLowerCase();
+    if (!usedQuestions.has(dedupeKey)) {
+      usedQuestions.add(dedupeKey);
+      questions.push(item);
+    }
   }
 
   return questions;
@@ -339,7 +451,7 @@ function generateSmartFallbackQuestions(
 
 // Challenge Rooms Endpoints
 app.post('/api/rooms', (req, res) => {
-  const { title, quizId, questions, maxPlayers, timeLimitMinutes, mode, hostName, hostAvatar } = req.body;
+  const { title, quizId, questions, maxPlayers, timeLimitMinutes, mode, hostId: reqHostId, hostName, hostAvatar } = req.body;
 
   // Generate 6-char alphanumeric room code
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -348,7 +460,7 @@ app.post('/api/rooms', (req, res) => {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
 
-  const hostId = `player-${Date.now()}`;
+  const hostId = reqHostId || `player-${Date.now()}`;
   const host: RoomParticipant = {
     id: hostId,
     name: hostName || 'Host',
@@ -399,12 +511,17 @@ app.post('/api/rooms/:code/join', (req, res) => {
     return res.status(400).json({ error: 'Challenge has already started' });
   }
 
+  const { playerId: reqPlayerId, playerName, avatar } = req.body;
+  const existingPlayer = reqPlayerId ? room.participants.find((p) => p.id === reqPlayerId) : null;
+  if (existingPlayer) {
+    return res.json({ success: true, room, playerId: existingPlayer.id });
+  }
+
   if (room.participants.length >= room.maxPlayers) {
     return res.status(400).json({ error: 'Room is already full' });
   }
 
-  const { playerName, avatar } = req.body;
-  const playerId = `player-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const playerId = reqPlayerId || `player-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
   const newPlayer: RoomParticipant = {
     id: playerId,
@@ -421,6 +538,42 @@ app.post('/api/rooms/:code/join', (req, res) => {
 
   room.participants.push(newPlayer);
   res.json({ success: true, room, playerId });
+});
+
+app.post('/api/rooms/:code/add-bot', (req, res) => {
+  const code = req.params.code.toUpperCase();
+  const room = rooms[code];
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+  if (room.participants.length >= room.maxPlayers) {
+    return res.status(400).json({ error: 'Room has reached max players limit.' });
+  }
+
+  const botNames = [
+    { name: 'Sarah K.', avatar: 'S' },
+    { name: 'Liam M.', avatar: 'L' },
+    { name: 'David P.', avatar: 'D' },
+    { name: 'Emma W.', avatar: 'E' },
+    { name: 'Noah T.', avatar: 'N' },
+  ];
+  const currentCount = room.participants.length;
+  const bot = botNames[(currentCount - 1) % botNames.length];
+  const botPlayer: RoomParticipant = {
+    id: `bot-${Date.now()}-${currentCount}`,
+    name: bot.name,
+    avatar: bot.avatar,
+    isHost: false,
+    score: 0,
+    correctAnswers: 0,
+    totalQuestions: room.questions.length,
+    accuracy: 0,
+    completed: false,
+    joinedAt: Date.now(),
+  };
+
+  room.participants.push(botPlayer);
+  res.json({ success: true, room, bot: botPlayer });
 });
 
 app.post('/api/rooms/:code/start', (req, res) => {
@@ -465,9 +618,14 @@ app.post('/api/rooms/:code/score', (req, res) => {
 
 // Vite middleware in dev or static files in production
 async function startServer() {
+  const httpServer = createHttpServer(app);
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        ws: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -478,7 +636,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Quizian Full-Stack Server running at http://0.0.0.0:${PORT}`);
   });
 }

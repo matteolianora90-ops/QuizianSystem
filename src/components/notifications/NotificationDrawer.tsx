@@ -42,22 +42,22 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
       {/* Drawer Container */}
       <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between border-l border-[#EBE7DF] animate-slide-left">
         {/* Drawer Header */}
-        <div className="p-5 border-b border-[#F0EEE9] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center font-bold">
+        <div className="p-4 sm:p-5 border-b border-[#F0EEE9] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center font-bold shrink-0">
               <Bell size={18} />
             </div>
-            <div>
-              <h3 className="font-extrabold text-base text-[#172337] font-['Outfit']">
+            <div className="min-w-0">
+              <h3 className="font-extrabold text-base text-[#172337] font-['Outfit'] truncate">
                 Study Notifications
               </h3>
-              <p className="text-xs text-[#202B3C]/60">Daily reminders & quiz alerts</p>
+              <p className="text-xs text-[#202B3C]/60 truncate">Daily reminders & quiz alerts</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 transition-colors cursor-pointer shrink-0"
           >
             <X size={16} />
           </button>
@@ -65,13 +65,13 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
 
         {/* Schedule Summary Banner */}
         <div className="p-4 bg-[#F7F4EF] border-b border-[#E8E4DC]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock size={16} className="text-[#F47A18]" />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Clock size={16} className="text-[#F47A18] shrink-0" />
               <span className="text-xs font-bold text-[#172337]">Daily Reminder Status:</span>
             </div>
             <span
-              className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+              className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
                 reminderConfig?.enabled
                   ? 'bg-emerald-100 text-emerald-800'
                   : 'bg-gray-200 text-gray-700'
@@ -82,7 +82,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
           </div>
 
           {reminderConfig?.enabled ? (
-            <p className="text-xs text-[#202B3C]/70 mt-1">
+            <p className="text-xs text-[#202B3C]/70 mt-1 break-words">
               ⏰ Scheduled for <span className="font-bold text-[#172337]">{reminderConfig.time}</span> on{' '}
               <span className="font-semibold text-[#172337]">{reminderConfig.days?.join(', ')}</span>
             </p>
@@ -92,10 +92,10 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
             </p>
           )}
 
-          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[#E8E4DC]/60">
+          <div className="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-[#E8E4DC]/60">
             <button
               onClick={() => triggerStudyReminder(undefined, undefined, true)}
-              className="py-1 px-2.5 rounded-lg bg-[#FFF0E3] hover:bg-[#ffe4cc] text-[#F47A18] text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+              className="py-1.5 px-2.5 rounded-lg bg-[#FFF0E3] hover:bg-[#ffe4cc] text-[#F47A18] text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
             >
               <Sparkles size={12} />
               <span>Test Notification Now</span>
@@ -105,7 +105,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
                 onClose();
                 setActiveTab('profile');
               }}
-              className="py-1 px-2.5 rounded-lg bg-white hover:bg-[#F0EEE9] text-[#202B3C] text-xs font-medium border border-[#E8E4DC] flex items-center gap-1 transition-colors cursor-pointer"
+              className="py-1.5 px-2.5 rounded-lg bg-white hover:bg-[#F0EEE9] text-[#202B3C] text-xs font-medium border border-[#E8E4DC] flex items-center gap-1 transition-colors cursor-pointer"
             >
               <Settings size={12} />
               <span>Customize Time</span>

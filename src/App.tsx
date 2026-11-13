@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navigation } from './components/common/Navigation';
 import { Toast } from './components/common/Toast';
+import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { StudyReminderAlert } from './components/notifications/StudyReminderAlert';
 import { AuthScreens } from './components/auth/AuthScreens';
 import { HomeDashboard } from './components/home/HomeDashboard';
@@ -12,10 +13,9 @@ import { ProfilePage } from './components/profile/ProfilePage';
 import { GenerateQuizModal } from './components/quizzes/GenerateQuizModal';
 import { ActiveGame } from './components/game/ActiveGame';
 import { ResultsScreen } from './components/results/ResultsScreen';
-import { PhoneFrame } from './components/common/PhoneFrame';
 
 const MainAppContent: React.FC = () => {
-  const { user, activeTab, activeScreen, setActiveTab, viewMode } = useApp();
+  const { user, activeTab, activeScreen, setActiveTab } = useApp();
 
   // Handle URL query parameters (e.g. ?challenge=XYZ123)
   useEffect(() => {
@@ -26,68 +26,36 @@ const MainAppContent: React.FC = () => {
     }
   }, [user]);
 
-  // If user is not authenticated, render Login / Sign Up screens
+  // If user is not authenticated, render Login / Sign Up screens full-page
   if (!user) {
     return (
-      <PhoneFrame>
+      <div className="min-h-screen w-full flex flex-col">
         <AuthScreens />
+        <OfflineIndicator />
         <Toast />
-      </PhoneFrame>
+      </div>
     );
   }
 
-  // Active Game is full-screen focused mode (per prototype guidelines)
+  // Active Game is full-screen focused mode
   if (activeScreen === 'game') {
     return (
-      <PhoneFrame>
+      <div className="min-h-screen w-full flex flex-col">
         <ActiveGame />
+        <OfflineIndicator />
         <Toast />
-      </PhoneFrame>
+      </div>
     );
   }
 
-  // When Phone View is active
-  if (viewMode === 'phone') {
-    return (
-      <PhoneFrame>
-        <div className="flex-1 flex flex-col min-h-0 bg-[#F7F4EF]">
-          {/* Scrollable Main Content Container */}
-          <main className="flex-1 px-3.5 py-4 overflow-y-auto pb-4">
-            {activeScreen === 'generate' && <GenerateQuizModal />}
-            {activeScreen === 'results' && <ResultsScreen />}
-            {activeScreen === 'main' && (
-              <>
-                {activeTab === 'home' && <HomeDashboard />}
-                {activeTab === 'quizzes' && <MyQuizzes />}
-                {activeTab === 'challenge' && <ChallengeView />}
-                {activeTab === 'activity' && <ActivityPage />}
-                {activeTab === 'profile' && <ProfilePage />}
-              </>
-            )}
-          </main>
-
-          {/* Docked Mobile Bottom Navigation */}
-          <Navigation />
-
-          {/* Study Reminder Alert Popover */}
-          <StudyReminderAlert />
-
-          {/* Global Notification Toast */}
-          <Toast />
-        </div>
-      </PhoneFrame>
-    );
-  }
-
-  // Desktop Fullscreen View
   return (
-    <PhoneFrame>
-      <div className="min-h-screen bg-[#F7F4EF] flex flex-col md:flex-row text-[#202B3C] font-['Plus_Jakarta_Sans',sans-serif]">
-        {/* Desktop Sidebar & Mobile Bottom Navigation */}
-        <Navigation />
+    <div className="min-h-screen w-full bg-[var(--brand-cream)] flex flex-col md:flex-row text-[#202B3C] font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* Desktop Sidebar & Mobile Bottom Navigation */}
+      <Navigation />
 
-        {/* Main Content Viewport */}
-        <main className="flex-1 min-w-0 max-w-5xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 overflow-y-auto pb-24 md:pb-8">
+      {/* Main Content Viewport */}
+      <main className="flex-1 min-w-0">
+        <div key={`${activeScreen}-${activeTab}`} className="max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-6 md:py-8 pb-24 md:pb-10 animate-fade-in">
           {activeScreen === 'generate' && <GenerateQuizModal />}
           {activeScreen === 'results' && <ResultsScreen />}
           {activeScreen === 'main' && (
@@ -99,15 +67,18 @@ const MainAppContent: React.FC = () => {
               {activeTab === 'profile' && <ProfilePage />}
             </>
           )}
-        </main>
+        </div>
+      </main>
 
-        {/* Study Reminder Alert Popover */}
-        <StudyReminderAlert />
+      {/* Study Reminder Alert Popover */}
+      <StudyReminderAlert />
 
-        {/* Global Notification Toast */}
-        <Toast />
-      </div>
-    </PhoneFrame>
+      {/* Offline Connectivity Banner */}
+      <OfflineIndicator />
+
+      {/* Global Notification Toast */}
+      <Toast />
+    </div>
   );
 };
 

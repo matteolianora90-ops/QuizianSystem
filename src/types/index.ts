@@ -1,8 +1,10 @@
-export type QuestionType = 'multiple_choice' | 'fill_blank' | 'identification' | 'scrambled_word';
+export type QuestionType =
+  | 'multiple_choice'
+  | 'fill_blank'
+  | 'identification'
+  | 'scrambled_word';
 
 export type DifficultyLevel = 'Easy' | 'Medium' | 'Hard';
-
-export type ViewMode = 'phone' | 'desktop';
 
 export interface Question {
   id: string;
@@ -13,6 +15,22 @@ export interface Question {
   explanation: string;
   scrambledClue?: string;
   userAnswer?: string;
+}
+
+export type StudyMaterialSourceType = 'notes' | 'txt' | 'pdf' | 'docx' | 'image';
+
+export interface StudyMaterial {
+  id: string;
+  quizId?: string;
+  title: string;
+  sourceType: StudyMaterialSourceType;
+  fileName?: string;
+  fileSize?: string;
+  mimeType?: string;
+  textContent?: string;
+  fileDataUrl?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Quiz {
@@ -26,6 +44,8 @@ export interface Quiz {
   updatedAt: string;
   timesPlayed: number;
   tags?: string[];
+  studyMaterialId?: string;
+  studyMaterialSummary?: string;
 }
 
 export interface StudyReminderConfig {
@@ -56,6 +76,8 @@ export interface UserProfile {
   school?: string;
   bio?: string;
   role: 'student' | 'educator';
+  totalPoints: number;
+  coins: number;
   settings: {
     notifications: boolean;
     challengeAlerts: boolean;
@@ -71,6 +93,7 @@ export interface ParticipantScore {
   name: string;
   avatar: string;
   score: number;
+  coins?: number;
   correctAnswers: number;
   totalQuestions: number;
   accuracy: number;
@@ -86,6 +109,7 @@ export interface ActivityRecord {
   timestamp: number;
   score: number;
   maxScore: number;
+  coinsEarned?: number;
   correctCount: number;
   totalQuestions: number;
   accuracy: number;

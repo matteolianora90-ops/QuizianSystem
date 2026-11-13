@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Bell, Sparkles, Trophy } from 'lucide-react';
+import { Bell, Coins } from 'lucide-react';
 import { NotificationDrawer } from '../notifications/NotificationDrawer';
+import { BrandLogo } from './BrandLogo';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   title: string;
@@ -15,30 +17,53 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, actionButton })
 
   return (
     <>
-      <header className="pb-5 mb-3 border-b border-[#EBE7DF] space-y-3">
-        {/* Top bar with branding and quick user controls */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#F47A18] text-white font-extrabold flex items-center justify-center text-xs shadow-xs md:hidden">
-              Q
-            </div>
+      <header className="pb-5 mb-2 border-b border-[#EBE7DF] space-y-3">
+        {/* Top bar with mobile branding and quick user controls */}
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setActiveTab('home')}
+            className="flex items-center gap-2 text-left cursor-pointer"
+          >
+            <BrandLogo size="sm" className="md:hidden" />
             <span className="text-xs font-bold uppercase tracking-wider text-[#F47A18]">
               Quizian
             </span>
             <span className="text-xs text-[#202B3C]/40 hidden sm:inline">•</span>
-            <span className="text-xs text-[#202B3C]/60 font-medium hidden sm:inline">Review smarter, not harder</span>
-          </div>
+            <span className="text-xs text-[#202B3C]/60 font-medium hidden sm:inline">
+              Review smarter, not harder
+            </span>
+          </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            {user && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('profile')}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100/80 border border-amber-200/80 text-xs font-extrabold text-amber-800 transition-colors cursor-pointer tabular-nums"
+                title="Account Points & Coins Balance"
+                data-testid="header-wallet-pill"
+              >
+                <Coins size={14} className="text-amber-600 shrink-0" />
+                <span>{user.coins ?? 0}</span>
+                <span className="text-amber-800/35 hidden sm:inline">|</span>
+                <span className="text-[#F47A18] hidden sm:inline">{user.totalPoints ?? 0} pts</span>
+              </button>
+            )}
+            <div className="md:hidden">
+              <PWAInstallButton variant="compact" />
+            </div>
             {/* Notification Bell Button */}
             <button
+              type="button"
               onClick={() => setIsDrawerOpen(true)}
-              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white hover:bg-[#F7F4EF] border border-[#E8E4DC] text-[#202B3C]/70 hover:text-[#172337] flex items-center justify-center transition-all cursor-pointer shadow-xs"
+              className="relative w-10 h-10 rounded-full bg-white hover:bg-[#F7F4EF] border border-[#E8E4DC] text-[#202B3C]/70 hover:text-[#172337] flex items-center justify-center transition-all cursor-pointer shadow-xs"
               title="Study Notifications"
+              aria-label="Open study notifications"
             >
-              <Bell size={17} />
+              <Bell size={18} />
               {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-[#F47A18] text-white text-[9px] sm:text-[10px] font-extrabold flex items-center justify-center ring-2 ring-white">
+                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#F47A18] text-white text-[10px] font-extrabold flex items-center justify-center ring-2 ring-white">
                   {unreadNotificationsCount}
                 </span>
               )}
@@ -47,9 +72,11 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, actionButton })
             {/* User Profile Avatar */}
             {user && (
               <button
+                type="button"
                 onClick={() => setActiveTab('profile')}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#F47A18] text-white font-bold flex items-center justify-center text-xs sm:text-sm shadow-sm hover:ring-2 hover:ring-[#F47A18]/30 transition-all cursor-pointer"
+                className="w-10 h-10 rounded-full bg-[#F47A18] text-white font-bold flex items-center justify-center text-sm shadow-sm hover:ring-2 hover:ring-[#F47A18]/30 transition-all cursor-pointer"
                 title="View Profile"
+                aria-label="View profile"
               >
                 {user.avatar || 'M'}
               </button>
@@ -58,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, actionButton })
         </div>
 
         {/* Title, Subtitle, and Optional Action Button */}
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 pt-1">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 pt-0.5">
           <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-[#172337] tracking-tight leading-tight">
               {title}
@@ -67,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, actionButton })
           </div>
 
           {actionButton && (
-            <div className="shrink-0 pt-1 sm:pt-0">
+            <div className="shrink-0 pt-1 sm:pt-0 self-start sm:self-end">
               {actionButton}
             </div>
           )}

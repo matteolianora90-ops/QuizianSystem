@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Eye, EyeOff, Check, AlertCircle, ArrowLeft, ShieldCheck, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Check, AlertCircle, ArrowLeft } from 'lucide-react';
+import { BrandLogo } from '../common/BrandLogo';
 
 export const AuthScreens: React.FC = () => {
   const { authView, setAuthView, login, signup, resetPassword, quickDemoLogin } = useApp();
@@ -69,13 +70,11 @@ export const AuthScreens: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full flex-1 bg-[#F7F4EF] flex flex-col justify-center items-center px-4 py-6 md:py-8 select-none overflow-y-auto">
+    <div className="min-h-screen w-full bg-[var(--brand-cream)] flex flex-col justify-center items-center px-4 py-8 sm:py-12 select-none">
       <div className="w-full max-w-md">
         {/* Brand Card Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#F47A18] text-white font-bold text-2xl shadow-lg shadow-[#F47A18]/25 mb-3 font-['Outfit']">
-            Q
-          </div>
+          <BrandLogo size="xl" className="mx-auto mb-3 shadow-lg shadow-[#F47A18]/15" />
           <h1 className="text-2xl md:text-3xl font-extrabold text-[#172337] tracking-tight">
             {authView === 'login' && 'Welcome to Quizian'}
             {authView === 'signup' && 'Create your account'}

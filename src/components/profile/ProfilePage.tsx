@@ -1,58 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../common/Header';
-import { StudyReminderConfig } from '../../types';
-import { 
-  User, 
-  Mail, 
-  Bell, 
-  Palette, 
-  HelpCircle, 
-  LogOut, 
-  ChevronRight, 
-  Lock, 
-  Check, 
-  X, 
-  School, 
-  Sparkles,
-  BookOpen,
-  Volume2,
+import {
+  User,
+  Palette,
+  HelpCircle,
+  LogOut,
+  ChevronRight,
+  Lock,
+  Check,
+  X,
   Clock,
-  Calendar,
-  AlertCircle,
-  BellRing
+  BellRing,
+  Trophy,
+  Coins
 } from 'lucide-react';
 
 export const ProfilePage: React.FC = () => {
-  const { 
-    user, 
-    updateProfile, 
-    updateReminderConfig, 
-    triggerStudyReminder, 
-    requestBrowserNotificationPermission, 
-    browserPermission, 
-    logout, 
-    showToast 
+  const {
+    user,
+    updateProfile,
+    triggerStudyReminder,
+    requestBrowserNotificationPermission,
+    browserPermission,
+    logout,
+    showToast
   } = useApp();
 
-  // Active modals
   const [activeModal, setActiveModal] = useState<
     'personal' | 'password' | 'notifications' | 'appearance' | 'help' | 'logout' | null
   >(null);
 
-  // Personal Info Form
   const [name, setName] = useState(user?.name || 'Matteo Llanora');
   const [email, setEmail] = useState(user?.email || 'matteollanora@gmail.com');
   const [school, setSchool] = useState(user?.school || 'Polytechnic University of the Philippines');
   const [bio, setBio] = useState(user?.bio || 'Computer Science student • Preparing for Midterms 📚');
 
-  // Password Form
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMsg, setPasswordMsg] = useState<{ isError: boolean; text: string } | null>(null);
 
-  // Notification & Daily Reminder Settings Form
   const savedReminder = user?.settings?.reminderConfig || {
     enabled: true,
     time: '19:30',
@@ -72,6 +60,27 @@ export const ProfilePage: React.FC = () => {
   const [challengeAlerts, setChallengeAlerts] = useState(user?.settings?.challengeAlerts ?? true);
   const [theme, setTheme] = useState(user?.settings?.theme || 'cream');
 
+  // Re-sync modal form state whenever user profile changes or a modal is opened
+  useEffect(() => {
+    if (!user) return;
+    setName(user.name || '');
+    setEmail(user.email || '');
+    setSchool(user.school || '');
+    setBio(user.bio || '');
+
+    const cfg = user.settings?.reminderConfig;
+    if (cfg) {
+      setReminderEnabled(cfg.enabled);
+      setReminderTime(cfg.time);
+      setReminderDays(cfg.days || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+      setReminderGoal(cfg.goal || 'Daily Quiz Review & Active Recall');
+      setReminderSound(cfg.soundEnabled ?? true);
+      setBrowserNotify(cfg.browserNotifications ?? false);
+    }
+    setChallengeAlerts(user.settings?.challengeAlerts ?? true);
+    setTheme(user.settings?.theme || 'cream');
+  }, [user, activeModal]);
+
   const allWeekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   const timePresets = [
@@ -84,7 +93,14 @@ export const ProfilePage: React.FC = () => {
 
   const handleSavePersonalInfo = (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile({ name, email, school, bio });
+    const trimmedName = name.trim();
+    updateProfile({
+      name: trimmedName || user?.name,
+      avatar: trimmedName ? trimmedName.charAt(0).toUpperCase() : user?.avatar,
+      email: email.trim() || user?.email,
+      school: school.trim(),
+      bio: bio.trim(),
+    });
     setActiveModal(null);
   };
 
@@ -107,13 +123,13 @@ export const ProfilePage: React.FC = () => {
       setNewPassword('');
       setConfirmPassword('');
       showToast('Password updated.');
-    }, 1500);
+    }, 1200);
   };
 
   const toggleDay = (day: string) => {
     setReminderDays((prev) => {
       if (prev.includes(day)) {
-        if (prev.length === 1) return prev; // keep at least 1 day
+        if (prev.length === 1) return prev;
         return prev.filter((d) => d !== day);
       }
       return [...prev, day];
@@ -130,6 +146,7 @@ export const ProfilePage: React.FC = () => {
     if (!user) return;
 
     const newReminderConfig = {
+      ...user.settings?.reminderConfig,
       enabled: reminderEnabled,
       time: reminderTime,
       days: reminderDays,
@@ -138,18 +155,21 @@ export const ProfilePage: React.FC = () => {
       browserNotifications: browserNotify,
     };
 
-    updateReminderConfig(newReminderConfig);
-
-    updateProfile({
-      settings: {
-        ...user.settings,
-        notifications: reminderEnabled,
-        challengeAlerts,
-        studyReminders: reminderEnabled,
-        soundEffects: reminderSound,
-        theme: theme as any,
+    // Single atomic profile update prevents stale-closure overwrite and double toasts
+    updateProfile(
+      {
+        settings: {
+          ...user.settings,
+          notifications: reminderEnabled,
+          challengeAlerts,
+          studyReminders: reminderEnabled,
+          soundEffects: reminderSound,
+          theme: theme as any,
+          reminderConfig: newReminderConfig,
+        },
       },
-    });
+      { silent: true }
+    );
 
     setActiveModal(null);
     showToast(`Daily reminder saved for ${reminderTime} (${reminderDays.join(', ')})`);
@@ -165,56 +185,78 @@ export const ProfilePage: React.FC = () => {
 
   const handleBrowserPermissionRequest = async () => {
     const res = await requestBrowserNotificationPermission();
-    if (res === 'granted') {
-      setBrowserNotify(true);
-    } else {
-      setBrowserNotify(false);
-    }
+    setBrowserNotify(res === 'granted');
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-6 pb-20 md:pb-8">
-      {/* Header */}
+    <div className="max-w-xl mx-auto space-y-6">
       <Header
         title="Your account and preferences"
         subtitle="Manage personal info, daily study reminders, appearance, and security."
       />
 
-      {/* User Identity Card (Matching Prototype Page 4) */}
-      <div className="bg-white rounded-3xl p-6 border border-[#EBE7DF] shadow-xs text-center space-y-3">
+      {/* User Identity Card */}
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EBE7DF] shadow-xs text-center space-y-3">
         <div className="w-20 h-20 rounded-full bg-[#FFF0E3] text-[#F47A18] font-extrabold text-3xl flex items-center justify-center mx-auto shadow-sm border-2 border-white ring-4 ring-[#FFF0E3]">
           {user?.avatar || 'M'}
         </div>
 
-        <div>
-          <h2 className="text-xl font-bold text-[#172337] font-['Outfit']">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold text-[#172337] font-['Outfit'] break-words">
             {user?.name || 'Matteo Llanora'}
           </h2>
-          <p className="text-xs text-[#202B3C]/60 mt-0.5">
+          <p className="text-xs text-[#202B3C]/60 mt-0.5 break-all">
             {user?.email || 'matteollanora@gmail.com'}
           </p>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F7F4EF] text-xs font-semibold text-[#172337] mt-2">
+          <div className="inline-flex flex-wrap items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-[#F7F4EF] text-xs font-semibold text-[#172337] mt-2 max-w-full">
             <span>Student account</span>
             <span>•</span>
-            <span className="text-[#F47A18]">{user?.school || 'Active Scholar'}</span>
+            <span className="text-[#F47A18] truncate max-w-[220px]">{user?.school || 'Active Scholar'}</span>
           </div>
         </div>
 
         {user?.bio && (
-          <p className="text-xs text-[#202B3C]/70 pt-2 border-t border-[#F0EEE9] max-w-sm mx-auto italic">
-            "{user.bio}"
+          <p className="text-xs text-[#202B3C]/70 pt-2 border-t border-[#F0EEE9] max-w-sm mx-auto italic break-words">
+            &ldquo;{user.bio}&rdquo;
           </p>
         )}
+
+        {/* Total Points & Coins Balance */}
+        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#F0EEE9] tabular-nums">
+          <div className="p-3 rounded-2xl bg-[#FFF0E3]/65 border border-[#F47A18]/20 flex items-center justify-center gap-2.5">
+            <Trophy size={18} className="text-[#F47A18] shrink-0" />
+            <div className="text-left">
+              <div className="text-base sm:text-lg font-extrabold text-[#172337] font-['Outfit']" data-testid="profile-total-points">
+                {(user?.totalPoints ?? 0).toLocaleString()}
+              </div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#F47A18]">
+                Total Points
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200/80 flex items-center justify-center gap-2.5">
+            <Coins size={18} className="text-amber-600 shrink-0" />
+            <div className="text-left">
+              <div className="text-base sm:text-lg font-extrabold text-[#172337] font-['Outfit']" data-testid="profile-coins">
+                {(user?.coins ?? 0).toLocaleString()}
+              </div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                Coins Balance
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* DAILY STUDY REMINDERS HIGHLIGHT CARD */}
-      <div className="bg-gradient-to-br from-[#FFF0E3] to-[#ffe8d6] border border-[#F47A18]/30 rounded-3xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
+      <div className="bg-gradient-to-br from-[#FFF0E3] to-[#ffe8d6] border border-[#F47A18]/30 rounded-3xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5 min-w-0">
           <div className="w-11 h-11 rounded-2xl bg-[#F47A18] text-white flex items-center justify-center shrink-0 shadow-sm shadow-[#F47A18]/30">
             <Clock size={20} />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-[#F47A18]">
                 Study Reminder
               </span>
@@ -233,7 +275,7 @@ export const ProfilePage: React.FC = () => {
                 ? `Everyday at ${savedReminder.time}`
                 : 'Reminders Paused'}
             </h3>
-            <p className="text-xs text-[#202B3C]/70 mt-0.5">
+            <p className="text-xs text-[#202B3C]/70 mt-0.5 break-words">
               {savedReminder.enabled
                 ? `Days: ${savedReminder.days?.join(', ')} • ${savedReminder.goal}`
                 : 'Turn on daily notifications to keep your study streak active.'}
@@ -241,16 +283,16 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
           <button
             onClick={() => setActiveModal('notifications')}
-            className="py-2 px-3.5 rounded-xl bg-white hover:bg-[#F7F4EF] text-xs font-bold text-[#172337] border border-[#E8E4DC] shadow-xs cursor-pointer transition-all"
+            className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl bg-white hover:bg-[#F7F4EF] text-xs font-bold text-[#172337] border border-[#E8E4DC] shadow-xs cursor-pointer transition-all"
           >
             Configure
           </button>
           <button
             onClick={handleTestReminderNow}
-            className="py-2 px-3 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
+            className="flex-1 sm:flex-initial py-2 px-3 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
             title="Test study notification chime and alert immediately"
           >
             Test Now
@@ -258,48 +300,40 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* ACCOUNT PREFERENCES LIST (Prototype Page 4) */}
-      <div className="bg-white rounded-3xl p-4 md:p-6 border border-[#EBE7DF] shadow-xs space-y-2">
+      {/* ACCOUNT PREFERENCES LIST */}
+      <div className="bg-white rounded-3xl p-4 sm:p-6 border border-[#EBE7DF] shadow-xs space-y-1.5">
         <div className="text-[11px] font-bold uppercase tracking-wider text-[#172337]/50 px-2 pb-1">
           ACCOUNT
         </div>
 
-        {/* 1. Personal Information */}
         <button
           onClick={() => setActiveModal('personal')}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
+          className="w-full flex items-center justify-between gap-3 p-3 sm:p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
         >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors shrink-0">
               <User size={18} />
             </div>
-            <div>
-              <h4 className="font-bold text-sm text-[#172337]">
-                Personal information
-              </h4>
-              <p className="text-xs text-[#202B3C]/60">
-                Edit your name, school and email
-              </p>
+            <div className="min-w-0">
+              <h4 className="font-bold text-sm text-[#172337]">Personal information</h4>
+              <p className="text-xs text-[#202B3C]/60 truncate">Edit your name, school and email</p>
             </div>
           </div>
-          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors" />
+          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors shrink-0" />
         </button>
 
-        {/* 2. Notifications & Daily Study Reminders */}
         <button
           onClick={() => setActiveModal('notifications')}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
+          className="w-full flex items-center justify-between gap-3 p-3 sm:p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
         >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center transition-colors shrink-0">
               <BellRing size={18} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-bold text-sm text-[#172337]">
-                  Daily Study Reminders & Alerts
-                </h4>
-                <span className="text-[10px] bg-[#F47A18] text-white px-1.5 py-0.2 rounded font-extrabold uppercase">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-bold text-sm text-[#172337]">Daily Study Reminders & Alerts</h4>
+                <span className="text-[10px] bg-[#F47A18] text-white px-1.5 py-0.5 rounded font-extrabold uppercase">
                   Local
                 </span>
               </div>
@@ -308,74 +342,59 @@ export const ProfilePage: React.FC = () => {
               </p>
             </div>
           </div>
-          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors" />
+          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors shrink-0" />
         </button>
 
-        {/* 3. Change Password */}
         <button
           onClick={() => setActiveModal('password')}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
+          className="w-full flex items-center justify-between gap-3 p-3 sm:p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
         >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors shrink-0">
               <Lock size={18} />
             </div>
-            <div>
-              <h4 className="font-bold text-sm text-[#172337]">
-                Change Password
-              </h4>
-              <p className="text-xs text-[#202B3C]/60">
-                Update account login credentials
-              </p>
+            <div className="min-w-0">
+              <h4 className="font-bold text-sm text-[#172337]">Change Password</h4>
+              <p className="text-xs text-[#202B3C]/60">Update account login credentials</p>
             </div>
           </div>
-          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors" />
+          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors shrink-0" />
         </button>
 
-        {/* 4. Appearance */}
         <button
           onClick={() => setActiveModal('appearance')}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
+          className="w-full flex items-center justify-between gap-3 p-3 sm:p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
         >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors shrink-0">
               <Palette size={18} />
             </div>
-            <div>
-              <h4 className="font-bold text-sm text-[#172337]">
-                Appearance
-              </h4>
-              <p className="text-xs text-[#202B3C]/60">
-                Light, warm cream, or dark accents
-              </p>
+            <div className="min-w-0">
+              <h4 className="font-bold text-sm text-[#172337]">Appearance</h4>
+              <p className="text-xs text-[#202B3C]/60">Light, warm cream, or dark accents</p>
             </div>
           </div>
-          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors" />
+          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors shrink-0" />
         </button>
 
-        {/* 5. Help and Support */}
         <button
           onClick={() => setActiveModal('help')}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
+          className="w-full flex items-center justify-between gap-3 p-3 sm:p-3.5 rounded-2xl hover:bg-[#F7F4EF] transition-all text-left group cursor-pointer"
         >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#F7F4EF] group-hover:bg-[#FFF0E3] text-[#202B3C] group-hover:text-[#F47A18] flex items-center justify-center transition-colors shrink-0">
               <HelpCircle size={18} />
             </div>
-            <div>
-              <h4 className="font-bold text-sm text-[#172337]">
-                Help and support
-              </h4>
-              <p className="text-xs text-[#202B3C]/60">
-                FAQs, study guide, and contact
-              </p>
+            <div className="min-w-0">
+              <h4 className="font-bold text-sm text-[#172337]">Help and support</h4>
+              <p className="text-xs text-[#202B3C]/60">FAQs, study guide, and contact</p>
             </div>
           </div>
-          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors" />
+          <ChevronRight size={18} className="text-[#202B3C]/40 group-hover:text-[#F47A18] transition-colors shrink-0" />
         </button>
       </div>
 
-      {/* SEPARATE VISUALLY ISOLATED LOGOUT BUTTON (Prototype Page 4 & Page 1 Note: "Keep Log out at the bottom and visually separate from normal actions") */}
+      {/* LOGOUT BUTTON */}
       <div className="pt-2">
         <button
           onClick={() => setActiveModal('logout')}
@@ -388,25 +407,25 @@ export const ProfilePage: React.FC = () => {
 
       {/* MODAL: DAILY STUDY REMINDERS & NOTIFICATION SETTINGS */}
       {activeModal === 'notifications' && (
-        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col p-6 shadow-2xl space-y-4 overflow-hidden border border-[#EBE7DF]">
-            <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center font-bold">
+        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90dvh] flex flex-col p-4 sm:p-6 shadow-2xl space-y-4 overflow-hidden border border-[#EBE7DF]">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F0EEE9]">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center font-bold shrink-0">
                   <Clock size={18} />
                 </div>
-                <div>
-                  <h3 className="font-extrabold text-lg text-[#172337] font-['Outfit']">
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-base sm:text-lg text-[#172337] font-['Outfit']">
                     Daily Study Reminders
                   </h3>
-                  <p className="text-xs text-[#202B3C]/60">
+                  <p className="text-xs text-[#202B3C]/60 truncate">
                     Set a routine to review your quizzes and boost memory
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setActiveModal(null)}
-                className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60"
+                className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 shrink-0 cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -414,14 +433,14 @@ export const ProfilePage: React.FC = () => {
 
             <div className="overflow-y-auto space-y-5 flex-1 pr-1 text-xs">
               {/* Master Switch */}
-              <div className="p-4 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] flex items-center justify-between">
-                <div>
+              <div className="p-4 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] flex items-center justify-between gap-3">
+                <div className="min-w-0">
                   <p className="font-bold text-sm text-[#172337]">Enable Daily Study Reminder</p>
                   <p className="text-xs text-[#202B3C]/70 mt-0.5">
                     Automatically alerts you at your chosen review time
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input
                     type="checkbox"
                     checked={reminderEnabled}
@@ -446,17 +465,16 @@ export const ProfilePage: React.FC = () => {
                       className="w-full px-4 py-2.5 rounded-xl bg-[#F7F4EF] border border-[#E8E4DC] text-sm font-bold text-[#172337] focus:outline-none focus:border-[#F47A18]"
                     />
                   </div>
-                  <span className="text-xs text-[#202B3C]/60 font-medium">24h format</span>
+                  <span className="text-xs text-[#202B3C]/60 font-medium shrink-0">24h format</span>
                 </div>
 
-                {/* Quick Presets */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {timePresets.map((preset) => (
                     <button
                       key={preset.time}
                       type="button"
                       onClick={() => setReminderTime(preset.time)}
-                      className={`py-1 px-2.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                      className={`py-1.5 px-2.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                         reminderTime === preset.time
                           ? 'bg-[#172337] text-white shadow-xs'
                           : 'bg-[#F0EEE9] text-[#202B3C]/70 hover:bg-[#E8E4DC]'
@@ -470,7 +488,7 @@ export const ProfilePage: React.FC = () => {
 
               {/* Days of Week Selection */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="block text-xs font-bold text-[#172337] uppercase tracking-wider">
                     Repeat Days
                   </label>
@@ -478,7 +496,7 @@ export const ProfilePage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setDaysPreset('weekdays')}
-                      className="text-[#F47A18] font-bold hover:underline"
+                      className="text-[#F47A18] font-bold hover:underline cursor-pointer"
                     >
                       Weekdays
                     </button>
@@ -486,14 +504,14 @@ export const ProfilePage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setDaysPreset('everyday')}
-                      className="text-[#F47A18] font-bold hover:underline"
+                      className="text-[#F47A18] font-bold hover:underline cursor-pointer"
                     >
                       Everyday
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-7 gap-1.5">
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
                   {allWeekDays.map((day) => {
                     const isSelected = reminderDays.includes(day);
                     return (
@@ -514,7 +532,7 @@ export const ProfilePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Study Goal / Custom Reminder Message */}
+              {/* Study Focus Goal */}
               <div>
                 <label className="block text-xs font-bold text-[#172337] uppercase tracking-wider mb-1">
                   Study Focus Goal
@@ -534,31 +552,29 @@ export const ProfilePage: React.FC = () => {
                   Notification Delivery
                 </label>
 
-                {/* System Browser Notifications */}
-                <div className="p-3 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] flex items-center justify-between">
-                  <div>
+                <div className="p-3 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <p className="font-bold text-xs text-[#172337]">System Web Notifications</p>
                     <p className="text-[11px] text-[#202B3C]/60">
                       Alerts through desktop or device OS notification center
                     </p>
                   </div>
                   {browserPermission === 'granted' ? (
-                    <span className="text-[11px] font-bold text-[#239B70] flex items-center gap-1 bg-[#239B70]/10 px-2 py-0.5 rounded-md">
+                    <span className="text-[11px] font-bold text-[#239B70] flex items-center gap-1 bg-[#239B70]/10 px-2 py-0.5 rounded-md shrink-0">
                       <Check size={12} strokeWidth={3} /> Allowed
                     </span>
                   ) : (
                     <button
                       type="button"
                       onClick={handleBrowserPermissionRequest}
-                      className="py-1 px-2.5 rounded-lg bg-[#172337] text-white text-[11px] font-bold hover:bg-[#202B3C]"
+                      className="py-1.5 px-2.5 rounded-lg bg-[#172337] text-white text-[11px] font-bold hover:bg-[#202B3C] shrink-0 cursor-pointer"
                     >
                       Allow Browser Alerts
                     </button>
                   )}
                 </div>
 
-                {/* Sound Chime */}
-                <label className="flex items-center justify-between p-3 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] cursor-pointer">
+                <label className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] cursor-pointer">
                   <div>
                     <p className="font-bold text-xs text-[#172337]">Audio Chime on Reminder</p>
                     <p className="text-[11px] text-[#202B3C]/60">Plays a gentle Web Audio two-tone study chime</p>
@@ -567,12 +583,11 @@ export const ProfilePage: React.FC = () => {
                     type="checkbox"
                     checked={reminderSound}
                     onChange={(e) => setReminderSound(e.target.checked)}
-                    className="rounded text-[#F47A18] focus:ring-[#F47A18]"
+                    className="rounded text-[#F47A18] focus:ring-[#F47A18] shrink-0"
                   />
                 </label>
 
-                {/* Challenge alerts */}
-                <label className="flex items-center justify-between p-3 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] cursor-pointer">
+                <label className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] cursor-pointer">
                   <div>
                     <p className="font-bold text-xs text-[#172337]">Classmate Challenge Alerts</p>
                     <p className="text-[11px] text-[#202B3C]/60">Notifies you when someone challenges you</p>
@@ -581,14 +596,14 @@ export const ProfilePage: React.FC = () => {
                     type="checkbox"
                     checked={challengeAlerts}
                     onChange={(e) => setChallengeAlerts(e.target.checked)}
-                    className="rounded text-[#F47A18] focus:ring-[#F47A18]"
+                    className="rounded text-[#F47A18] focus:ring-[#F47A18] shrink-0"
                   />
                 </label>
               </div>
 
               {/* Instant Test Button */}
-              <div className="p-3.5 rounded-2xl bg-[#FFF0E3] border border-[#F47A18]/20 flex items-center justify-between">
-                <div>
+              <div className="p-3.5 rounded-2xl bg-[#FFF0E3] border border-[#F47A18]/20 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
                   <p className="font-bold text-xs text-[#172337]">Want to test your reminder?</p>
                   <p className="text-[11px] text-[#202B3C]/70">
                     Triggers the sound, in-app banner, and system notification now.
@@ -604,12 +619,11 @@ export const ProfilePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Modal Controls */}
-            <div className="pt-3 border-t border-[#F0EEE9] flex items-center justify-end gap-2">
+            <div className="pt-3 border-t border-[#F0EEE9] flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] text-xs font-bold text-[#202B3C]"
+                className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] text-xs font-bold text-[#202B3C] cursor-pointer"
               >
                 Cancel
               </button>
@@ -627,11 +641,11 @@ export const ProfilePage: React.FC = () => {
 
       {/* MODAL: PERSONAL INFORMATION */}
       {activeModal === 'personal' && (
-        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Personal Information</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337]">
+              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -676,13 +690,13 @@ export const ProfilePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveModal(null)}
-                  className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] text-xs font-bold text-[#202B3C]"
+                  className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] text-xs font-bold text-[#202B3C] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="py-2.5 px-4 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs"
+                  className="py-2.5 px-4 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs cursor-pointer"
                 >
                   Save Changes
                 </button>
@@ -694,11 +708,11 @@ export const ProfilePage: React.FC = () => {
 
       {/* MODAL: CHANGE PASSWORD */}
       {activeModal === 'password' && (
-        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Change Password</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337]">
+              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -749,13 +763,13 @@ export const ProfilePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveModal(null)}
-                  className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] text-xs font-bold text-[#202B3C]"
+                  className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] text-xs font-bold text-[#202B3C] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="py-2.5 px-4 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs"
+                  className="py-2.5 px-4 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs cursor-pointer"
                 >
                   Update Password
                 </button>
@@ -767,11 +781,11 @@ export const ProfilePage: React.FC = () => {
 
       {/* MODAL: APPEARANCE */}
       {activeModal === 'appearance' && (
-        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Appearance</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337]">
+              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -784,31 +798,34 @@ export const ProfilePage: React.FC = () => {
                 <div
                   key={thm.id}
                   onClick={() => setTheme(thm.id as any)}
-                  className={`p-3.5 rounded-2xl border cursor-pointer flex items-center justify-between ${
+                  className={`p-3.5 rounded-2xl border cursor-pointer flex items-center justify-between gap-2 ${
                     theme === thm.id ? 'bg-[#FFF0E3] border-[#F47A18]' : 'bg-[#F7F4EF] border-[#E8E4DC]'
                   }`}
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-bold text-[#172337]">{thm.name}</p>
                     <p className="text-[11px] text-[#202B3C]/60">{thm.desc}</p>
                   </div>
-                  {theme === thm.id && <Check size={16} className="text-[#F47A18]" />}
+                  {theme === thm.id && <Check size={16} className="text-[#F47A18] shrink-0" />}
                 </div>
               ))}
             </div>
             <button
               onClick={() => {
                 if (!user) return;
-                updateProfile({
-                  settings: {
-                    ...user.settings,
-                    theme: theme as any,
+                updateProfile(
+                  {
+                    settings: {
+                      ...user.settings,
+                      theme: theme as any,
+                    },
                   },
-                });
+                  { silent: true }
+                );
                 setActiveModal(null);
                 showToast('Theme updated.');
               }}
-              className="w-full py-2.5 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs mt-2"
+              className="w-full py-2.5 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs mt-2 cursor-pointer"
             >
               Apply Theme
             </button>
@@ -818,11 +835,11 @@ export const ProfilePage: React.FC = () => {
 
       {/* MODAL: HELP & SUPPORT */}
       {activeModal === 'help' && (
-        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[85vh] flex flex-col p-6 shadow-2xl space-y-4 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90dvh] flex flex-col p-5 sm:p-6 shadow-2xl space-y-4 overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Quizian Help & FAQs</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337]">
+              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -834,15 +851,15 @@ export const ProfilePage: React.FC = () => {
                 </p>
               </div>
               <div className="p-3 rounded-2xl bg-[#F7F4EF]">
-                <h4 className="font-bold text-[#172337] mb-1">How does AI Quiz Generation work?</h4>
+                <h4 className="font-bold text-[#172337] mb-1">How does Quiz Generation work?</h4>
                 <p>
-                  Quizian leverages Google Gemini 3.8 Flash to analyze lecture notes, textbook passages, or slides. It extracts central definitions and designs 4-choice questions, fill-in-the-blanks, and identification prompts.
+                  Quizian analyzes lecture notes, textbook passages, or slides. It extracts central definitions and designs 4-choice questions, fill-in-the-blanks, and identification prompts.
                 </p>
               </div>
               <div className="p-3 rounded-2xl bg-[#F7F4EF]">
                 <h4 className="font-bold text-[#172337] mb-1">How do I challenge a friend?</h4>
                 <p>
-                  Click "Challenge a friend", pick one of your saved quizzes, choose a time limit, and click "Create Challenge". Share the 6-character room code with your classmate to have them join in real-time.
+                  Click &ldquo;Challenge a friend&rdquo;, pick one of your saved quizzes, choose a time limit, and click &ldquo;Create Challenge&rdquo;. Share the 6-character room code with your classmate to have them join in real-time.
                 </p>
               </div>
               <div className="p-3 rounded-2xl bg-[#FFF0E3] text-[#172337]">
@@ -854,7 +871,7 @@ export const ProfilePage: React.FC = () => {
             </div>
             <button
               onClick={() => setActiveModal(null)}
-              className="w-full py-2.5 rounded-xl bg-[#172337] text-white text-xs font-bold mt-2"
+              className="w-full py-2.5 rounded-xl bg-[#172337] text-white text-xs font-bold mt-2 cursor-pointer"
             >
               Close Help
             </button>
@@ -864,8 +881,8 @@ export const ProfilePage: React.FC = () => {
 
       {/* MODAL: LOG OUT CONFIRMATION */}
       {activeModal === 'logout' && (
-        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl text-center space-y-3">
+        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-5 sm:p-6 shadow-2xl text-center space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-2">
               <LogOut size={24} />
             </div>
@@ -876,7 +893,7 @@ export const ProfilePage: React.FC = () => {
             <div className="grid grid-cols-2 gap-3 pt-3">
               <button
                 onClick={() => setActiveModal(null)}
-                className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-bold text-[#202B3C]"
+                className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-bold text-[#202B3C] cursor-pointer"
               >
                 Stay Logged In
               </button>
@@ -885,7 +902,7 @@ export const ProfilePage: React.FC = () => {
                   setActiveModal(null);
                   logout();
                 }}
-                className="py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold"
+                className="py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
               >
                 Confirm Log Out
               </button>

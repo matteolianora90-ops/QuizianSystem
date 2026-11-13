@@ -1,25 +1,20 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../common/Header';
-import { ActivityRecord } from '../../types';
-import { 
-  Activity, 
-  CheckCircle2, 
-  Swords, 
-  BookOpen, 
-  Trophy, 
-  Calendar, 
-  Clock, 
-  Award, 
-  Filter, 
+import { ActivityRecord, Quiz } from '../../types';
+import {
+  Activity,
+  CheckCircle2,
+  Swords,
+  BookOpen,
   Trash2,
-  ChevronRight,
   Eye,
-  X
+  X,
+  Coins
 } from 'lucide-react';
 
 export const ActivityPage: React.FC = () => {
-  const { activities, clearActivities, startGame, quizzes } = useApp();
+  const { activities, clearActivities, startGame, quizzes, showToast } = useApp();
   const [filterType, setFilterType] = useState<'all' | 'challenge' | 'solo'>('all');
   const [inspectingActivity, setInspectingActivity] = useState<ActivityRecord | null>(null);
 
@@ -30,13 +25,39 @@ export const ActivityPage: React.FC = () => {
 
   const totalQuizzes = activities.length;
   const challengeWins = activities.filter((a) => a.type === 'challenge' && a.rank === 1).length;
-  const avgAccuracy = totalQuizzes > 0
-    ? Math.round(activities.reduce((acc, a) => acc + a.accuracy, 0) / totalQuizzes)
-    : 0;
+  const avgAccuracy =
+    totalQuizzes > 0
+      ? Math.round(activities.reduce((acc, a) => acc + a.accuracy, 0) / totalQuizzes)
+      : 0;
+
+  const handleRetryActivity = (act: ActivityRecord) => {
+    const matchedQuiz = quizzes.find((q) => q.id === act.quizId);
+    if (matchedQuiz) {
+      startGame(matchedQuiz, act.type);
+      return;
+    }
+
+    if (act.questionsSnapshot && act.questionsSnapshot.length > 0) {
+      const snapshotQuiz: Quiz = {
+        id: act.quizId,
+        title: act.quizTitle,
+        description: 'Replayed from study activity history',
+        category: 'Study Review',
+        questions: act.questionsSnapshot,
+        difficulty: 'Medium',
+        createdAt: act.date,
+        updatedAt: act.date,
+        timesPlayed: 1,
+      };
+      startGame(snapshotQuiz, act.type);
+      return;
+    }
+
+    showToast('This quiz is no longer available.');
+  };
 
   return (
-    <div className="space-y-6 pb-20 md:pb-8">
-      {/* Header */}
+    <div className="space-y-6">
       <Header
         title="Study & Challenge Activity"
         subtitle="Track your review history, retention milestones, and match results over time."
@@ -55,7 +76,7 @@ export const ActivityPage: React.FC = () => {
       />
 
       {/* Overview Analytics Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-3.5 tabular-nums">
         <div className="bg-white rounded-2xl p-4 border border-[#EBE7DF] shadow-xs">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#202B3C]/60 block mb-1">
             Total Sessions
@@ -98,10 +119,10 @@ export const ActivityPage: React.FC = () => {
       </div>
 
       {/* Filter Chips */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => setFilterType('all')}
-          className={`py-1.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`py-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             filterType === 'all'
               ? 'bg-[#172337] text-white shadow-xs'
               : 'bg-white text-[#202B3C]/70 border border-[#E8E4DC] hover:bg-[#F0EEE9]'
@@ -111,7 +132,7 @@ export const ActivityPage: React.FC = () => {
         </button>
         <button
           onClick={() => setFilterType('challenge')}
-          className={`py-1.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`py-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             filterType === 'challenge'
               ? 'bg-[#F47A18] text-white shadow-xs'
               : 'bg-white text-[#202B3C]/70 border border-[#E8E4DC] hover:bg-[#F0EEE9]'
@@ -121,7 +142,7 @@ export const ActivityPage: React.FC = () => {
         </button>
         <button
           onClick={() => setFilterType('solo')}
-          className={`py-1.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`py-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             filterType === 'solo'
               ? 'bg-[#172337] text-white shadow-xs'
               : 'bg-white text-[#202B3C]/70 border border-[#E8E4DC] hover:bg-[#F0EEE9]'
@@ -133,7 +154,7 @@ export const ActivityPage: React.FC = () => {
 
       {/* ACTIVITY RECORDS LIST */}
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-3xl p-10 text-center border border-[#EBE7DF]">
+        <div className="bg-white rounded-3xl p-8 sm:p-10 text-center border border-[#EBE7DF]">
           <div className="w-12 h-12 rounded-2xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center mx-auto mb-3">
             <Activity size={24} />
           </div>
@@ -149,9 +170,9 @@ export const ActivityPage: React.FC = () => {
             return (
               <div
                 key={act.id}
-                className="bg-white rounded-3xl p-4 md:p-5 border border-[#EBE7DF] hover:border-[#F47A18]/30 shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                className="bg-white rounded-3xl p-4 sm:p-5 border border-[#EBE7DF] hover:border-[#F47A18]/30 shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
               >
-                <div className="flex items-start gap-3.5">
+                <div className="flex items-start gap-3.5 min-w-0">
                   <div
                     className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
                       isChallenge ? 'bg-[#FFF0E3] text-[#F47A18]' : 'bg-[#239B70]/10 text-[#239B70]'
@@ -160,8 +181,8 @@ export const ActivityPage: React.FC = () => {
                     {isChallenge ? <Swords size={20} /> : <BookOpen size={20} />}
                   </div>
 
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1">
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
                           isChallenge ? 'bg-[#FFF0E3] text-[#F47A18]' : 'bg-gray-100 text-[#202B3C]'
@@ -178,17 +199,22 @@ export const ActivityPage: React.FC = () => {
                       <span className="text-xs text-[#202B3C]/60">{act.date}</span>
                     </div>
 
-                    <h4 className="font-bold text-base text-[#172337]">
+                    <h4 className="font-bold text-base text-[#172337] break-words">
                       {act.quizTitle}
                     </h4>
 
-                    <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-2 text-xs tabular-nums">
                       <span className="font-bold text-[#239B70] flex items-center gap-1">
                         <CheckCircle2 size={13} /> {act.accuracy}% Accuracy
                       </span>
                       <span className="text-[#202B3C]/40">•</span>
                       <span className="font-bold text-[#F47A18]">
                         {act.score} pts
+                      </span>
+                      <span className="text-[#202B3C]/40">•</span>
+                      <span className="font-bold text-amber-700 inline-flex items-center gap-1">
+                        <Coins size={12} className="text-amber-600" />
+                        {act.coinsEarned ?? act.correctCount * 5} coins
                       </span>
                       <span className="text-[#202B3C]/40">•</span>
                       <span className="text-[#202B3C]/60">
@@ -198,22 +224,17 @@ export const ActivityPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                <div className="flex items-center gap-2 self-stretch sm:self-center shrink-0">
                   <button
                     onClick={() => setInspectingActivity(act)}
-                    className="py-2 px-3 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-semibold text-[#202B3C] flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="flex-1 sm:flex-initial py-2 px-3 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-semibold text-[#202B3C] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Eye size={13} />
                     <span>Breakdown</span>
                   </button>
                   <button
-                    onClick={() => {
-                      const matchedQuiz = quizzes.find((q) => q.id === act.quizId);
-                      if (matchedQuiz) {
-                        startGame(matchedQuiz, act.type);
-                      }
-                    }}
-                    className="py-2 px-3.5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold transition-colors cursor-pointer"
+                    onClick={() => handleRetryActivity(act)}
+                    className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold transition-colors cursor-pointer"
                   >
                     Retry
                   </button>
@@ -226,32 +247,38 @@ export const ActivityPage: React.FC = () => {
 
       {/* INSPECT ACTIVITY DETAILS MODAL */}
       {inspectingActivity && (
-        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-[#EBE7DF] space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
-              <div>
+        <div className="fixed inset-0 z-50 bg-[#172337]/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-[#EBE7DF] space-y-4">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F0EEE9]">
+              <div className="min-w-0">
                 <span className="text-xs font-bold uppercase tracking-wider text-[#F47A18]">
                   Session Details
                 </span>
-                <h3 className="text-lg font-bold text-[#172337]">
+                <h3 className="text-lg font-bold text-[#172337] break-words">
                   {inspectingActivity.quizTitle}
                 </h3>
                 <p className="text-xs text-[#202B3C]/60">{inspectingActivity.date}</p>
               </div>
               <button
                 onClick={() => setInspectingActivity(null)}
-                className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70"
+                className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 shrink-0 cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center tabular-nums">
               <div className="p-3 rounded-2xl bg-[#F7F4EF]">
                 <div className="text-lg font-bold text-[#172337]">
                   {inspectingActivity.score}
                 </div>
-                <div className="text-[10px] uppercase font-bold text-[#202B3C]/60">Score</div>
+                <div className="text-[10px] uppercase font-bold text-[#202B3C]/60">Points</div>
+              </div>
+              <div className="p-3 rounded-2xl bg-amber-50 text-amber-800">
+                <div className="text-lg font-bold">
+                  {inspectingActivity.coinsEarned ?? inspectingActivity.correctCount * 5}
+                </div>
+                <div className="text-[10px] uppercase font-bold">Coins</div>
               </div>
               <div className="p-3 rounded-2xl bg-[#239B70]/10 text-[#239B70]">
                 <div className="text-lg font-bold">
@@ -276,12 +303,14 @@ export const ActivityPage: React.FC = () => {
                   {inspectingActivity.leaderboard.map((item, i) => (
                     <div
                       key={item.id || i}
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-[#F7F4EF] text-xs"
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-[#F7F4EF] text-xs gap-2"
                     >
-                      <span className="font-bold text-[#172337]">
+                      <span className="font-bold text-[#172337] truncate">
                         #{i + 1} {item.name}
                       </span>
-                      <span className="font-extrabold text-[#F47A18]">{item.score} pts</span>
+                      <span className="font-extrabold text-[#F47A18] shrink-0 tabular-nums">
+                        {item.score} pts
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -290,7 +319,7 @@ export const ActivityPage: React.FC = () => {
 
             <button
               onClick={() => setInspectingActivity(null)}
-              className="w-full py-2.5 rounded-xl bg-[#172337] text-white font-bold text-xs"
+              className="w-full py-2.5 rounded-xl bg-[#172337] text-white font-bold text-xs cursor-pointer"
             >
               Close
             </button>
