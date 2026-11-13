@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const QUIZIAN_LOGO_SRC = '/assets/aistudio/download__3__de814aad.jfif';
+export const QUIZIAN_LOGO_SRC = `${import.meta.env.BASE_URL}assets/aistudio/download__3__de814aad.jfif`;
 
 interface BrandLogoProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';

@@ -12,14 +12,17 @@ import {
   X,
   Clock,
   BellRing,
-  Trophy,
-  Coins
+  Cloud,
+  Loader2
 } from 'lucide-react';
 
 export const ProfilePage: React.FC = () => {
   const {
     user,
+    authMode,
+    isSyncingCloud,
     updateProfile,
+    changePassword,
     triggerStudyReminder,
     requestBrowserNotificationPermission,
     browserPermission,
@@ -39,6 +42,7 @@ export const ProfilePage: React.FC = () => {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState<{ isError: boolean; text: string } | null>(null);
 
   const savedReminder = user?.settings?.reminderConfig || {
@@ -104,7 +108,7 @@ export const ProfilePage: React.FC = () => {
     setActiveModal(null);
   };
 
-  const handleSavePassword = (e: React.FormEvent) => {
+  const handleSavePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordMsg(null);
     if (!newPassword || newPassword.length < 6) {
@@ -115,15 +119,22 @@ export const ProfilePage: React.FC = () => {
       setPasswordMsg({ isError: true, text: 'Passwords do not match.' });
       return;
     }
-    setPasswordMsg({ isError: false, text: 'Password changed successfully.' });
-    setTimeout(() => {
-      setActiveModal(null);
-      setPasswordMsg(null);
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      showToast('Password updated.');
-    }, 1200);
+    setIsUpdatingPassword(true);
+    try {
+      const res = await changePassword(oldPassword, newPassword);
+      setPasswordMsg({ isError: !res.success, text: res.message });
+      if (res.success) {
+        setTimeout(() => {
+          setActiveModal(null);
+          setPasswordMsg(null);
+          setOldPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        }, 1200);
+      }
+    } finally {
+      setIsUpdatingPassword(false);
+    }
   };
 
   const toggleDay = (day: string) => {
@@ -213,6 +224,24 @@ export const ProfilePage: React.FC = () => {
             <span>•</span>
             <span className="text-[#F47A18] truncate max-w-[220px]">{user?.school || 'Active Scholar'}</span>
           </div>
+          <div className="mt-2 flex items-center justify-center">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                authMode === 'firebase'
+                  ? 'bg-[#239B70]/10 text-[#239B70]'
+                  : 'bg-[#FFF0E3] text-[#F47A18]'
+              }`}
+            >
+              <Cloud size={12} />
+              <span>
+                {authMode === 'firebase'
+                  ? isSyncingCloud
+                    ? 'Syncing with Firebase Cloud...'
+                    : 'Firebase Cloud Synced'
+                  : 'Local Demo Storage'}
+              </span>
+            </span>
+          </div>
         </div>
 
         {user?.bio && (
@@ -220,33 +249,6 @@ export const ProfilePage: React.FC = () => {
             &ldquo;{user.bio}&rdquo;
           </p>
         )}
-
-        {/* Total Points & Coins Balance */}
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#F0EEE9] tabular-nums">
-          <div className="p-3 rounded-2xl bg-[#FFF0E3]/65 border border-[#F47A18]/20 flex items-center justify-center gap-2.5">
-            <Trophy size={18} className="text-[#F47A18] shrink-0" />
-            <div className="text-left">
-              <div className="text-base sm:text-lg font-extrabold text-[#172337] font-['Outfit']" data-testid="profile-total-points">
-                {(user?.totalPoints ?? 0).toLocaleString()}
-              </div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#F47A18]">
-                Total Points
-              </div>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200/80 flex items-center justify-center gap-2.5">
-            <Coins size={18} className="text-amber-600 shrink-0" />
-            <div className="text-left">
-              <div className="text-base sm:text-lg font-extrabold text-[#172337] font-['Outfit']" data-testid="profile-coins">
-                {(user?.coins ?? 0).toLocaleString()}
-              </div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                Coins Balance
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* DAILY STUDY REMINDERS HIGHLIGHT CARD */}
@@ -424,8 +426,10 @@ export const ProfilePage: React.FC = () => {
                 </div>
               </div>
               <button
+                type="button"
+                aria-label="Close reminders modal"
                 onClick={() => setActiveModal(null)}
-                className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 shrink-0 cursor-pointer"
+                className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 shrink-0 cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -645,7 +649,7 @@ export const ProfilePage: React.FC = () => {
           <div className="bg-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Personal Information</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
+              <button type="button" aria-label="Close personal info modal" onClick={() => setActiveModal(null)} className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -712,7 +716,7 @@ export const ProfilePage: React.FC = () => {
           <div className="bg-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Change Password</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
+              <button type="button" aria-label="Close change password modal" onClick={() => setActiveModal(null)} className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -769,9 +773,11 @@ export const ProfilePage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="py-2.5 px-4 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs cursor-pointer"
+                  disabled={isUpdatingPassword}
+                  className="py-2.5 px-4 rounded-xl bg-[#F47A18] text-white text-xs font-bold shadow-xs cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60"
                 >
-                  Update Password
+                  {isUpdatingPassword && <Loader2 size={13} className="animate-spin" />}
+                  <span>{isUpdatingPassword ? 'Updating...' : 'Update Password'}</span>
                 </button>
               </div>
             </form>
@@ -785,7 +791,7 @@ export const ProfilePage: React.FC = () => {
           <div className="bg-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Appearance</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
+              <button type="button" aria-label="Close appearance modal" onClick={() => setActiveModal(null)} className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -839,7 +845,7 @@ export const ProfilePage: React.FC = () => {
           <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90dvh] flex flex-col p-5 sm:p-6 shadow-2xl space-y-4 overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-[#F0EEE9]">
               <h3 className="font-bold text-lg text-[#172337]">Quizian Help & FAQs</h3>
-              <button onClick={() => setActiveModal(null)} className="text-[#202B3C]/50 hover:text-[#172337] cursor-pointer">
+              <button type="button" aria-label="Close help modal" onClick={() => setActiveModal(null)} className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 hover:text-[#172337] cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -853,7 +859,7 @@ export const ProfilePage: React.FC = () => {
               <div className="p-3 rounded-2xl bg-[#F7F4EF]">
                 <h4 className="font-bold text-[#172337] mb-1">How does Quiz Generation work?</h4>
                 <p>
-                  Quizian analyzes lecture notes, textbook passages, or slides. It extracts central definitions and designs 4-choice questions, fill-in-the-blanks, and identification prompts.
+                  Quizian analyzes lecture notes, textbook passages, or slides. It extracts central definitions and designs Multiple Choice, Identification, and Scrambled Words questions.
                 </p>
               </div>
               <div className="p-3 rounded-2xl bg-[#F7F4EF]">

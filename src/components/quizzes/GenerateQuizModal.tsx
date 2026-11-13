@@ -25,10 +25,11 @@ import {
 } from 'lucide-react';
 
 const QUESTION_COUNT_OPTIONS = [5, 8, 10, 15, 20, 30];
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const DEFAULT_SELECTED_TYPES: QuestionType[] = [
   'multiple_choice',
-  'fill_blank',
   'identification',
+  'scrambled_word',
 ];
 
 export const GenerateQuizModal: React.FC = () => {
@@ -58,9 +59,11 @@ export const GenerateQuizModal: React.FC = () => {
   // Selected question types (multi-select)
   const [selectedTypes, setSelectedTypes] = useState<QuestionType[]>(DEFAULT_SELECTED_TYPES);
 
-  // Generation status
+  // Generation & Review status
   const [generationSource, setGenerationSource] = useState<string>('');
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [isSavingQuiz, setIsSavingQuiz] = useState(false);
 
   // Generated questions for review
   const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([]);
@@ -122,6 +125,13 @@ Mental Models represent what a user believes about the system at hand, guiding t
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setGenerationError('File exceeds the 10 MB limit. Please upload a smaller study file.');
+      e.target.value = '';
+      return;
+    }
+
+    setGenerationError(null);
     const sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
     const lowerName = file.name.toLowerCase();
     const isPdf = file.type === 'application/pdf' || lowerName.endsWith('.pdf');
@@ -143,6 +153,11 @@ Mental Models represent what a user believes about the system at hand, guiding t
       reader.readAsDataURL(file);
     } else if (isDocx) {
       const cleanText = await extractDocxText(file);
+      if (!cleanText.trim()) {
+        setGenerationError('Could not extract readable text from this Word document. Try pasting the notes or uploading a PDF.');
+        e.target.value = '';
+        return;
+      }
       setUploadedFile({
         name: file.name,
         size: sizeStr,
@@ -151,6 +166,11 @@ Mental Models represent what a user believes about the system at hand, guiding t
       setQuizTitle(file.name.replace(/\.[^/.]+$/, ''));
     } else {
       const rawText = await file.text().catch(() => '');
+      if (!rawText.trim()) {
+        setGenerationError('The uploaded text file appears to be empty.');
+        e.target.value = '';
+        return;
+      }
       setUploadedFile({
         name: file.name,
         size: sizeStr,
@@ -184,12 +204,23 @@ Mental Models represent what a user believes about the system at hand, guiding t
   };
 
   const handleGenerate = async () => {
-    const textToUse = activeTab === 'upload' && uploadedFile?.text
-      ? uploadedFile.text
-      : pastedText.trim() || (uploadedFile?.base64 ? `Study material from file: ${uploadedFile.name}` : sampleNotes[0].text);
+    if (activeTab === 'upload' && !uploadedFile) {
+      setGenerationError('Please upload a study file (PDF, DOCX, TXT, or image) or switch to "Paste Notes".');
+      return;
+    }
+    if (activeTab === 'paste' && !pastedText.trim()) {
+      setGenerationError('Please paste your study notes or pick one of the sample notes below.');
+      return;
+    }
+
+    const textToUse =
+      activeTab === 'upload'
+        ? uploadedFile?.text || `Study material from file: ${uploadedFile?.name || 'Uploaded File'}`
+        : pastedText.trim();
 
     setStep('generating');
     setGenerationError(null);
+    setReviewError(null);
 
     if (!isOnline) {
       const offlineQs = generateOfflineQuestions(textToUse, questionCount, selectedTypes, difficulty);
@@ -205,8 +236,8 @@ Mental Models represent what a user believes about the system at hand, guiding t
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           materialText: textToUse,
-          fileBase64: uploadedFile?.base64,
-          fileMimeType: uploadedFile?.mimeType,
+          fileBase64: activeTab === 'upload' ? uploadedFile?.base64 : undefined,
+          fileMimeType: activeTab === 'upload' ? uploadedFile?.mimeType : undefined,
           questionTypes: selectedTypes,
           questionCount,
           difficulty,
@@ -244,18 +275,71 @@ Mental Models represent what a user believes about the system at hand, guiding t
   };
 
   const handleSaveToQuizzes = (launchMode?: 'solo' | 'challenge') => {
+    if (isSavingQuiz) return;
+
+    const cleanTitle = quizTitle.trim();
+    if (!cleanTitle) {
+      setReviewError('Please enter a quiz title before saving.');
+      return;
+    }
+    if (generatedQuestions.length === 0) {
+      setReviewError('At least one question is required.');
+      return;
+    }
+
+    const sanitizedQuestions: Question[] = [];
+    for (let i = 0; i < generatedQuestions.length; i++) {
+      const q = generatedQuestions[i];
+      const prompt = q.question.trim();
+      const answer = q.correctAnswer.trim();
+      if (!prompt || !answer) {
+        setReviewError(`Question ${i + 1} needs both a prompt and a correct answer.`);
+        return;
+      }
+      if (q.type === 'multiple_choice') {
+        const cleanOptions = (q.options || []).map((o) => o.trim()).filter(Boolean);
+        if (cleanOptions.length < 2) {
+          setReviewError(`Question ${i + 1} (Multiple Choice) needs at least 2 non-empty options.`);
+          return;
+        }
+        const matchedOption = cleanOptions.find((o) => o.toLowerCase() === answer.toLowerCase());
+        if (!matchedOption) {
+          setReviewError(`Question ${i + 1}: select one of the options as the correct answer.`);
+          return;
+        }
+        sanitizedQuestions.push({
+          ...q,
+          question: prompt,
+          options: cleanOptions,
+          correctAnswer: matchedOption,
+          explanation: (q.explanation || '').trim(),
+        });
+      } else {
+        sanitizedQuestions.push({
+          ...q,
+          question: prompt,
+          options: [],
+          correctAnswer: answer,
+          explanation: (q.explanation || '').trim(),
+        });
+      }
+    }
+
+    setReviewError(null);
+    setIsSavingQuiz(true);
+
     const today = new Date().toISOString().split('T')[0];
     const newQuizId = `quiz-${Date.now()}`;
     const materialId = reusedMaterialId || `mat-${Date.now()}`;
     const sourceText =
       activeTab === 'upload' && uploadedFile?.text
         ? uploadedFile.text
-        : pastedText.trim() || (!uploadedFile ? sampleNotes[0].text : undefined);
+        : pastedText.trim() || undefined;
 
     const materialToSave: StudyMaterial = {
       id: materialId,
       quizId: newQuizId,
-      title: quizTitle.trim() || 'Generated Quiz Notes',
+      title: cleanTitle,
       sourceType: resolveSourceType(),
       fileName: activeTab === 'upload' ? uploadedFile?.name : undefined,
       fileSize: activeTab === 'upload' ? uploadedFile?.size : undefined,
@@ -270,11 +354,11 @@ Mental Models represent what a user believes about the system at hand, guiding t
 
     const newQuiz: Quiz = {
       id: newQuizId,
-      title: quizTitle.trim() || 'Generated Quiz',
+      title: cleanTitle,
       description: `Generated from ${uploadedFile ? uploadedFile.name : 'study notes'} • ${selectedTypes.length} question types.`,
       category: 'Study Review',
       difficulty,
-      questions: generatedQuestions,
+      questions: sanitizedQuestions,
       createdAt: today,
       updatedAt: today,
       timesPlayed: 0,
@@ -425,7 +509,10 @@ Mental Models represent what a user believes about the system at hand, guiding t
                   <textarea
                     rows={6}
                     value={pastedText}
-                    onChange={(e) => setPastedText(e.target.value)}
+                    onChange={(e) => {
+                      setPastedText(e.target.value);
+                      if (generationError) setGenerationError(null);
+                    }}
                     placeholder="Paste textbook excerpts, lecture transcript, definitions, or study notes here..."
                     className="w-full p-4 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] text-sm text-[#172337] focus:outline-none focus:border-[#F47A18]"
                   />
@@ -441,6 +528,7 @@ Mental Models represent what a user believes about the system at hand, guiding t
                           onClick={() => {
                             setPastedText(sn.text);
                             setQuizTitle(sn.title);
+                            if (generationError) setGenerationError(null);
                           }}
                           className="py-1 px-3 rounded-lg bg-[#F0EEE9] hover:bg-[#FFF0E3] hover:text-[#F47A18] text-xs font-medium text-[#202B3C] transition-colors cursor-pointer"
                         >
@@ -471,10 +559,10 @@ Mental Models represent what a user believes about the system at hand, guiding t
                   }`}
                 >
                   <CheckSquare size={13} />
-                  <span>{allTypesSelected ? 'Reset Default' : 'Select All (4)'}</span>
+                  <span>{allTypesSelected ? 'Reset Default' : 'Select All (3)'}</span>
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
                 {QUESTION_TYPE_OPTIONS.map((typeItem) => {
                   const isSelected = selectedTypes.includes(typeItem.id);
                   return (
@@ -636,13 +724,21 @@ Mental Models represent what a user believes about the system at hand, guiding t
               </button>
               <button
                 type="button"
+                disabled={isSavingQuiz}
                 onClick={() => handleSaveToQuizzes()}
-                className="py-2.5 px-5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold shadow-xs cursor-pointer"
+                className="py-2.5 px-5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60"
               >
                 Save to My Quizzes
               </button>
             </div>
           </div>
+
+          {reviewError && (
+            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{reviewError}</span>
+            </div>
+          )}
 
           {/* Generated Questions List for Review */}
           <div className="space-y-4">
@@ -744,8 +840,8 @@ Mental Models represent what a user believes about the system at hand, guiding t
                   </div>
                 )}
 
-                {/* Fill in Blank / Identification / Scrambled Word */}
-                {(q.type === 'fill_blank' || q.type === 'identification' || q.type === 'scrambled_word') && (
+                {/* Identification / Scrambled Word */}
+                {(q.type === 'identification' || q.type === 'scrambled_word') && (
                   <div>
                     <label className="text-[11px] font-bold text-[#202B3C]/60 uppercase block mb-1">
                       Correct Answer:
@@ -810,23 +906,26 @@ Mental Models represent what a user believes about the system at hand, guiding t
           <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <button
               type="button"
+              disabled={isSavingQuiz}
               onClick={() => handleSaveToQuizzes()}
-              className="w-full sm:w-auto py-3.5 px-6 rounded-2xl bg-white border border-[#E8E4DC] hover:bg-[#F7F4EF] text-[#172337] font-bold text-sm transition-all cursor-pointer"
+              className="w-full sm:w-auto py-3.5 px-6 rounded-2xl bg-white border border-[#E8E4DC] hover:bg-[#F7F4EF] text-[#172337] font-bold text-sm transition-all cursor-pointer disabled:opacity-60"
             >
               Save to My Quizzes
             </button>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
               <button
                 type="button"
+                disabled={isSavingQuiz}
                 onClick={() => handleSaveToQuizzes('solo')}
-                className="py-3.5 px-5 rounded-2xl bg-[#FFF0E3] hover:bg-[#ffe3cc] text-[#F47A18] font-bold text-sm transition-all cursor-pointer"
+                className="py-3.5 px-5 rounded-2xl bg-[#FFF0E3] hover:bg-[#ffe3cc] text-[#F47A18] font-bold text-sm transition-all cursor-pointer disabled:opacity-60"
               >
                 Save &amp; Practice Solo
               </button>
               <button
                 type="button"
+                disabled={isSavingQuiz}
                 onClick={() => handleSaveToQuizzes('challenge')}
-                className="py-3.5 px-6 rounded-2xl bg-[#F47A18] hover:bg-[#e0690f] text-white font-bold text-sm shadow-md shadow-[#F47A18]/25 transition-all cursor-pointer"
+                className="py-3.5 px-6 rounded-2xl bg-[#F47A18] hover:bg-[#e0690f] text-white font-bold text-sm shadow-md shadow-[#F47A18]/25 transition-all cursor-pointer disabled:opacity-60"
               >
                 Save &amp; Challenge Friends
               </button>

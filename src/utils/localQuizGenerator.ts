@@ -5,18 +5,17 @@ export function generateOfflineQuestions(
   materialText: string,
   count: number,
   types: QuestionType[],
-  difficulty: DifficultyLevel
+  _difficulty: DifficultyLevel
 ): Question[] {
   const safeCount = Math.min(Math.max(count || 5, 2), 30);
   const allowedSet = new Set<QuestionType>([
     'multiple_choice',
-    'fill_blank',
     'identification',
     'scrambled_word',
   ]);
   const filteredTypes = types.filter((t) => allowedSet.has(t));
   const activeTypes: QuestionType[] =
-    filteredTypes.length > 0 ? filteredTypes : ['multiple_choice', 'fill_blank', 'identification'];
+    filteredTypes.length > 0 ? filteredTypes : ['multiple_choice', 'identification', 'scrambled_word'];
 
   const segments = materialText
     .replace(/\r\n/g, '\n')
@@ -75,19 +74,7 @@ export function generateOfflineQuestions(
 
     let item: Question;
 
-    if (chosenType === 'fill_blank') {
-      const masked = sentence.replace(new RegExp(`\\b${keyWord}\\b`, 'i'), '____');
-      item = {
-        id: `offline-q-${baseTime}-${i}`,
-        type: 'fill_blank',
-        question: masked.includes('____')
-          ? `Fill in the blank (${i + 1}): ${masked}`
-          : `Complete the concept (${i + 1}): ____ — ${sentence}`,
-        options: [],
-        correctAnswer: keyWord,
-        explanation: `From your saved study material: "${sentence}"`,
-      };
-    } else if (chosenType === 'scrambled_word') {
+    if (chosenType === 'scrambled_word') {
       const upper = keyWord.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'CONCEPT';
       const scrambled = createScrambledTiles(upper, `${baseTime}-${i}`)
         .map((t) => t.char)

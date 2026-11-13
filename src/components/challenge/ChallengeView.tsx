@@ -3,7 +3,14 @@ import { useApp } from '../../context/AppContext';
 import { Header } from '../common/Header';
 import { ChallengeArenaIllustration } from '../common/EducationalIllustrations';
 import { getCategoryVisual } from '../../utils/categoryVisuals';
-import { ChallengeRoomState, ParticipantScore } from '../../types';
+import { ChallengeRoomState, ParticipantScore, Quiz } from '../../types';
+import {
+  addBotParticipantToFirestore,
+  createChallengeRoomInFirestore,
+  joinChallengeRoomInFirestore,
+  startChallengeRoomInFirestore,
+  subscribeToChallengeRoom,
+} from '../../utils/firestoreSync';
 import {
   Swords,
   Copy,
@@ -19,19 +26,28 @@ import {
   Trophy,
   CheckCircle2,
   Hourglass,
-  Radio
+  Radio,
+  Mail,
+  Send,
+  Bot,
+  X,
 } from 'lucide-react';
 
 export const ChallengeView: React.FC = () => {
   const {
     user,
+    authMode,
     quizzes,
     activities,
     selectedQuizForChallenge,
     currentRoom,
     setCurrentRoom,
+    pendingInvitations,
+    sendChallengeInvite,
+    acceptChallengeInvite,
+    declineChallengeInvite,
     startGame,
-    showToast
+    showToast,
   } = useApp();
 
   const [challengeMode, setChallengeMode] = useState<'create' | 'join'>('create');
@@ -48,9 +64,38 @@ export const ChallengeView: React.FC = () => {
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [isAddingBot, setIsAddingBot] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
-  const startedFromPollRef = useRef(false);
+
+  // Direct email invitation state
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
+  const [inviteFeedback, setInviteFeedback] = useState<{ isError: boolean; text: string } | null>(
+    null
+  );
+
+  const startedFromRealtimeRef = useRef(false);
 
   const completedChallenges = activities.filter((a) => a.type === 'challenge');
+
+  // Reconstruct the exact shared Quiz from room.questions so joiners across devices play the identical quiz
+  const buildQuizFromRoom = (room: ChallengeRoomState): Quiz => {
+    const localMatch = quizzes.find((q) => q.id === room.quizId);
+    const today = new Date().toISOString().split('T')[0];
+    return {
+      id: room.quizId || localMatch?.id || `room-quiz-${room.code}`,
+      title: room.title.replace(/\s+Challenge$/i, '') || localMatch?.title || 'Challenge Quiz',
+      description: localMatch?.description || 'Live multiplayer study challenge.',
+      category: localMatch?.category || 'Challenge',
+      difficulty:
+        room.mode === 'Hard' ? 'Hard' : localMatch?.difficulty || 'Medium',
+      questions:
+        Array.isArray(room.questions) && room.questions.length > 0
+          ? room.questions
+          : localMatch?.questions || [],
+      createdAt: localMatch?.createdAt || today,
+      updatedAt: today,
+      timesPlayed: localMatch?.timesPlayed || 0,
+    };
+  };
 
   // Auto-open Join tab and pre-fill room code when arriving via ?challenge=CODE
   useEffect(() => {
@@ -73,14 +118,57 @@ export const ChallengeView: React.FC = () => {
 
   const activeSelectedQuiz = quizzes.find((q) => q.id === selectedQuizId) || quizzes[0];
 
-  // Poll room updates if in waiting room
+  // Real-time room updates via Firestore onSnapshot AND Express WebSocket/Polling fallback
   useEffect(() => {
     if (!currentRoom) {
-      startedFromPollRef.current = false;
+      startedFromRealtimeRef.current = false;
       return;
     }
 
     if (currentRoom.code.startsWith('QZ-')) return;
+
+    const handleRoomTransition = (updatedRoom: ChallengeRoomState) => {
+      setCurrentRoom(updatedRoom);
+      if (updatedRoom.status === 'active' && !startedFromRealtimeRef.current) {
+        startedFromRealtimeRef.current = true;
+        const quizToPlay = buildQuizFromRoom(updatedRoom);
+        if (quizToPlay.questions.length > 0) {
+          startGame(quizToPlay, 'challenge', updatedRoom.timeLimitMinutes, updatedRoom);
+        }
+      }
+    };
+
+    if (authMode === 'firebase') {
+      const unsub = subscribeToChallengeRoom(currentRoom.code, (room) => {
+        if (room) {
+          handleRoomTransition(room);
+        }
+      });
+      return () => unsub();
+    }
+
+    // Demo / Express mode: WebSocket + lightweight polling backup
+    let socket: WebSocket | null = null;
+    try {
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${wsProto}//${window.location.host}/ws/challenges`);
+      socket.onopen = () => {
+        socket?.send(JSON.stringify({ type: 'subscribe', roomCode: currentRoom.code }));
+      };
+      socket.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg?.type === 'room_update' && msg.room) {
+            handleRoomTransition(msg.room);
+          }
+        } catch {
+          // ignore
+        }
+      };
+      socket.onerror = () => {};
+    } catch {
+      // fallback to polling below
+    }
 
     const interval = setInterval(async () => {
       try {
@@ -88,23 +176,25 @@ export const ChallengeView: React.FC = () => {
         if (res.ok) {
           const data = await res.json();
           if (data.success && data.room) {
-            setCurrentRoom(data.room);
-            if (data.room.status === 'active' && !startedFromPollRef.current) {
-              startedFromPollRef.current = true;
-              const quizToPlay = quizzes.find((q) => q.id === data.room.quizId) || activeSelectedQuiz;
-              if (quizToPlay) {
-                startGame(quizToPlay, 'challenge', data.room.timeLimitMinutes, data.room);
-              }
-            }
+            handleRoomTransition(data.room);
           }
         }
       } catch {
         // silent fail on poll
       }
-    }, 2500);
+    }, 3000);
 
-    return () => clearInterval(interval);
-  }, [currentRoom?.code, currentRoom?.status, quizzes, activeSelectedQuiz]);
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        try {
+          socket.close();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [currentRoom?.code, currentRoom?.status, authMode]);
 
   // Create Challenge Room
   const handleCreateChallenge = async () => {
@@ -115,6 +205,37 @@ export const ChallengeView: React.FC = () => {
 
     setIsCreatingRoom(true);
     try {
+      if (authMode === 'firebase' && user) {
+        const cloudRoom = await createChallengeRoomInFirestore({
+          quiz: activeSelectedQuiz,
+          maxPlayers: playerCount,
+          timeLimitMinutes: timeLimit,
+          mode: gameMode,
+          hostProfile: user,
+        });
+        // Mirror room to Express server if available (best effort)
+        fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: cloudRoom.code,
+            title: cloudRoom.title,
+            quizId: cloudRoom.quizId,
+            questions: cloudRoom.questions,
+            maxPlayers: cloudRoom.maxPlayers,
+            timeLimitMinutes: cloudRoom.timeLimitMinutes,
+            mode: cloudRoom.mode,
+            hostId: cloudRoom.hostId,
+            hostName: user.name,
+            hostAvatar: user.avatar,
+          }),
+        }).catch(() => {});
+
+        setCurrentRoom(cloudRoom);
+        showToast(`Cloud Challenge Room ${cloudRoom.code} created!`);
+        return;
+      }
+
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -163,6 +284,7 @@ export const ChallengeView: React.FC = () => {
             accuracy: 0,
             completed: false,
             isHost: true,
+            isBot: false,
           },
         ],
       };
@@ -184,6 +306,13 @@ export const ChallengeView: React.FC = () => {
 
     setIsJoiningRoom(true);
     try {
+      if (authMode === 'firebase' && user) {
+        const joinedRoom = await joinChallengeRoomInFirestore(cleanCode, user);
+        setCurrentRoom(joinedRoom);
+        showToast(`Joined Room ${joinedRoom.code}!`);
+        return;
+      }
+
       const res = await fetch(`/api/rooms/${cleanCode}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -201,14 +330,14 @@ export const ChallengeView: React.FC = () => {
       } else {
         setJoinError(data.error || 'Room not found or game already active.');
       }
-    } catch {
-      setJoinError('Could not reach room. Please check the code.');
+    } catch (err: any) {
+      setJoinError(err?.message || 'Could not reach room. Please check the code.');
     } finally {
       setIsJoiningRoom(false);
     }
   };
 
-  // Add simulated classmate bot
+  // Add simulated practice bot (host only or offline)
   const handleAddClassmateBot = async () => {
     if (!currentRoom || isAddingBot) return;
 
@@ -219,28 +348,43 @@ export const ChallengeView: React.FC = () => {
     }
 
     const botNames = [
-      { name: 'Sarah K.', avatar: 'S' },
-      { name: 'Liam M.', avatar: 'L' },
-      { name: 'David P.', avatar: 'D' },
-      { name: 'Emma Watson', avatar: 'E' },
+      { name: 'Sarah K. (Bot)', avatar: 'S' },
+      { name: 'Liam M. (Bot)', avatar: 'L' },
+      { name: 'David P. (Bot)', avatar: 'D' },
+      { name: 'Emma W. (Bot)', avatar: 'E' },
     ];
     const bot = botNames[(currentCount - 1) % botNames.length];
 
     if (!currentRoom.code.startsWith('QZ-')) {
       setIsAddingBot(true);
       try {
+        if (authMode === 'firebase') {
+          const added = await addBotParticipantToFirestore(
+            currentRoom.code,
+            bot.name,
+            bot.avatar,
+            currentRoom.questions.length
+          );
+          showToast(`Added practice opponent ${added.name}!`);
+          return;
+        }
+
         const res = await fetch(`/api/rooms/${currentRoom.code}/add-bot`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ botName: bot.name, avatar: bot.avatar }),
+          body: JSON.stringify({
+            botName: bot.name,
+            avatar: bot.avatar,
+            hostId: user?.id || currentRoom.hostId,
+          }),
         });
         const data = await res.json();
         if (data.success && data.room) {
           setCurrentRoom(data.room);
-          showToast(`Added classmate ${data.addedBot?.name || bot.name}!`);
+          showToast(`Added practice opponent ${data.addedBot?.name || bot.name}!`);
           return;
         }
-        showToast(data.error || 'Could not add classmate.');
+        showToast(data.error || 'Could not add practice bot.');
         return;
       } catch {
         // fall through to local update if network fails
@@ -258,33 +402,74 @@ export const ChallengeView: React.FC = () => {
       totalQuestions: currentRoom.questions.length,
       accuracy: 0,
       completed: false,
+      isHost: false,
+      isBot: true,
     };
 
     setCurrentRoom({
       ...currentRoom,
       participants: [...currentRoom.participants, newParticipant],
     });
-    showToast(`Added classmate ${bot.name}!`);
+    showToast(`Added practice opponent ${bot.name}!`);
+  };
+
+  const handleSendInviteEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentRoom) return;
+    setInviteFeedback(null);
+    setIsSendingInvite(true);
+    try {
+      const res = await sendChallengeInvite(currentRoom.code, currentRoom.title, inviteEmail);
+      setInviteFeedback({ isError: !res.success, text: res.message });
+      if (res.success) {
+        setInviteEmail('');
+      }
+    } finally {
+      setIsSendingInvite(false);
+    }
   };
 
   // Start the live challenge
   const handleStartChallengeNow = async () => {
     if (!currentRoom) return;
 
-    if (!currentRoom.code.startsWith('QZ-')) {
-      try {
-        await fetch(`/api/rooms/${currentRoom.code}/start`, { method: 'POST' });
-      } catch {
-        // continue into local game even if offline
-      }
-    }
-
-    const quizToPlay = quizzes.find((q) => q.id === currentRoom.quizId) || activeSelectedQuiz;
-    if (!quizToPlay) {
+    const quizToPlay = buildQuizFromRoom(currentRoom);
+    if (quizToPlay.questions.length === 0) {
       showToast('Quiz data not found for this room.');
       return;
     }
-    startedFromPollRef.current = true;
+
+    // Lock realtime listener before awaiting start so Firestore latency-compensated snapshot / WS update never triggers a duplicate startGame()
+    startedFromRealtimeRef.current = true;
+
+    if (!currentRoom.code.startsWith('QZ-')) {
+      if (authMode === 'firebase') {
+        try {
+          await startChallengeRoomInFirestore(currentRoom.code);
+        } catch {
+          startedFromRealtimeRef.current = false;
+          showToast('Only the room host can start the challenge.');
+          return;
+        }
+      } else {
+        try {
+          const res = await fetch(`/api/rooms/${currentRoom.code}/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hostId: user?.id || currentRoom.hostId }),
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            startedFromRealtimeRef.current = false;
+            showToast(errData.error || 'Could not start the challenge.');
+            return;
+          }
+        } catch {
+          // continue into local game even if offline
+        }
+      }
+    }
+
     startGame(quizToPlay, 'challenge', currentRoom.timeLimitMinutes, currentRoom);
   };
 
@@ -298,7 +483,7 @@ export const ChallengeView: React.FC = () => {
 
   const handleCopyInviteLink = () => {
     if (!currentRoom) return;
-    const link = `${window.location.origin}?challenge=${currentRoom.code}`;
+    const link = `${window.location.origin}${window.location.pathname}?challenge=${currentRoom.code}`;
     navigator.clipboard?.writeText(link).catch(() => {});
     showToast('Copied challenge invite link!');
   };
@@ -306,12 +491,13 @@ export const ChallengeView: React.FC = () => {
   // Waiting Room View
   if (currentRoom && currentRoom.status === 'waiting') {
     const emptySeatsCount = Math.max(0, currentRoom.maxPlayers - currentRoom.participants.length);
+    const isHost = currentRoom.hostId === user?.id || currentRoom.participants.some((p) => p.id === user?.id && p.isHost);
 
     return (
       <div className="max-w-3xl mx-auto space-y-6">
         <Header
           title="Challenge Waiting Room"
-          subtitle="Friends can join using the room code below. Once everyone is ready, start the match."
+          subtitle="Invite classmates by email, room code, or link. Once everyone is ready, start the match."
         />
 
         {/* Room Code Showcase Card */}
@@ -349,6 +535,46 @@ export const ChallengeView: React.FC = () => {
           </div>
         </div>
 
+        {/* Invite Friend by Email Card */}
+        {isHost && (
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EBE7DF] shadow-xs space-y-3">
+            <div className="flex items-center gap-2">
+              <Mail size={16} className="text-[#F47A18]" />
+              <h3 className="font-extrabold text-sm text-[#172337]">Invite Classmate Directly</h3>
+            </div>
+            <p className="text-xs text-[#202B3C]/65">
+              Send an in-app challenge notification directly to a classmate signed in with Google or Firebase.
+            </p>
+            <form onSubmit={handleSendInviteEmail} className="flex flex-col sm:flex-row gap-2.5">
+              <input
+                type="email"
+                required
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="classmate@gmail.com"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[#F7F4EF] border border-[#E8E4DC] text-sm text-[#172337] focus:outline-none focus:border-[#F47A18]"
+              />
+              <button
+                type="submit"
+                disabled={isSendingInvite}
+                className="py-2.5 px-4 rounded-xl bg-[#172337] hover:bg-[#202B3C] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60"
+              >
+                {isSendingInvite ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                <span>{isSendingInvite ? 'Sending...' : 'Send Invite'}</span>
+              </button>
+            </form>
+            {inviteFeedback && (
+              <p
+                className={`text-xs font-medium ${
+                  inviteFeedback.isError ? 'text-red-600' : 'text-[#239B70]'
+                }`}
+              >
+                {inviteFeedback.text}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Participants Roster */}
         <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EBE7DF] shadow-xs space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#F0EEE9]">
@@ -360,19 +586,20 @@ export const ChallengeView: React.FC = () => {
                 </h3>
               </div>
               <p className="text-xs text-[#202B3C]/65 mt-0.5 break-words">
-                Quiz: {currentRoom.title} · {currentRoom.timeLimitMinutes} min · {currentRoom.mode} mode
+                Quiz: {currentRoom.title} · {currentRoom.questions.length} Qs ·{' '}
+                {currentRoom.timeLimitMinutes} min · {currentRoom.mode} mode
               </p>
             </div>
 
-            {currentRoom.participants.length < currentRoom.maxPlayers && (
+            {isHost && currentRoom.participants.length < currentRoom.maxPlayers && (
               <button
                 type="button"
                 onClick={handleAddClassmateBot}
                 disabled={isAddingBot}
                 className="py-2 px-3 rounded-xl bg-[#FFF0E3] hover:bg-[#ffe4cc] text-[#F47A18] text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60"
               >
-                <UserPlus size={14} />
-                <span>{isAddingBot ? 'Adding...' : '+ Add Classmate'}</span>
+                <Bot size={14} />
+                <span>{isAddingBot ? 'Adding...' : '+ Add Practice Bot'}</span>
               </button>
             )}
           </div>
@@ -393,6 +620,11 @@ export const ChallengeView: React.FC = () => {
                       {p.isHost && (
                         <span className="inline-flex items-center gap-1 text-[10px] bg-[#FFF0E3] text-[#F47A18] px-2 py-0.5 rounded-md font-bold uppercase shrink-0">
                           <Crown size={10} /> Host
+                        </span>
+                      )}
+                      {(p.isBot || p.id.startsWith('bot-')) && (
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-[#E8E4DC] text-[#172337] px-2 py-0.5 rounded-md font-bold uppercase shrink-0">
+                          Bot
                         </span>
                       )}
                     </p>
@@ -422,7 +654,7 @@ export const ChallengeView: React.FC = () => {
 
           {currentRoom.participants.length === 1 && (
             <div className="p-3.5 rounded-2xl bg-[#FFF0E3]/60 border border-[#F47A18]/25 text-[#172337] text-xs">
-              Waiting for friends to join... or click &ldquo;+ Add Classmate&rdquo; to test a group match right now!
+              Share your room code or send an email invite above — or click &ldquo;+ Add Practice Bot&rdquo; to test a group match immediately!
             </div>
           )}
         </div>
@@ -431,19 +663,29 @@ export const ChallengeView: React.FC = () => {
         <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-2">
           <button
             type="button"
-            onClick={() => setCurrentRoom(null)}
+            onClick={() => {
+              startedFromRealtimeRef.current = false;
+              setCurrentRoom(null);
+            }}
             className="w-full sm:w-auto py-3 px-5 rounded-2xl border border-[#E8E4DC] hover:bg-white text-xs font-bold text-[#202B3C] cursor-pointer"
           >
             Leave Room
           </button>
-          <button
-            type="button"
-            onClick={handleStartChallengeNow}
-            className="w-full sm:w-auto py-3.5 px-8 rounded-2xl bg-[#F47A18] hover:bg-[#e0690f] text-white font-extrabold text-sm shadow-lg shadow-[#F47A18]/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Play size={16} fill="currentColor" />
-            <span>Start Challenge Now</span>
-          </button>
+          {isHost ? (
+            <button
+              type="button"
+              onClick={handleStartChallengeNow}
+              className="w-full sm:w-auto py-3.5 px-8 rounded-2xl bg-[#F47A18] hover:bg-[#e0690f] text-white font-extrabold text-sm shadow-lg shadow-[#F47A18]/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Play size={16} fill="currentColor" />
+              <span>Start Challenge Now</span>
+            </button>
+          ) : (
+            <div className="py-3 px-5 rounded-2xl bg-[#FFF0E3] border border-[#F47A18]/30 text-xs font-bold text-[#F47A18] flex items-center justify-center gap-2">
+              <Loader2 size={14} className="animate-spin" />
+              <span>Waiting for host to start the challenge...</span>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -455,6 +697,53 @@ export const ChallengeView: React.FC = () => {
         title="Play and learn together"
         subtitle="Challenge classmates with your saved study quizzes and compare scores on the live leaderboard."
       />
+
+      {/* INCOMING CHALLENGE INVITATIONS */}
+      {pendingInvitations.length > 0 && (
+        <div className="bg-white rounded-3xl p-4 sm:p-5 border-2 border-[#F47A18] shadow-sm space-y-3">
+          <div className="flex items-center gap-2">
+            <Mail size={16} className="text-[#F47A18]" />
+            <h3 className="text-sm font-extrabold text-[#172337]">
+              Incoming Challenge Invitations ({pendingInvitations.length})
+            </h3>
+          </div>
+          <div className="space-y-2.5">
+            {pendingInvitations.map((inv) => (
+              <div
+                key={inv.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#FFF0E3]/60 border border-[#F47A18]/25"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-[#172337] truncate">
+                    {inv.senderName} invited you to {inv.quizTitle}
+                  </p>
+                  <p className="text-xs text-[#202B3C]/70 font-mono">
+                    Room Code: <span className="font-bold text-[#F47A18]">{inv.roomCode}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => acceptChallengeInvite(inv)}
+                    className="py-2 px-4 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Check size={14} />
+                    <span>Accept &amp; Join</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => declineChallengeInvite(inv)}
+                    className="py-2 px-3 rounded-xl bg-white border border-[#E8E4DC] hover:bg-red-50 hover:text-red-600 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <X size={14} />
+                    <span>Decline</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Exciting Challenge Arena Banner */}
       <div className="relative overflow-hidden bg-gradient-to-br from-[#172337] via-[#1c2b43] to-[#263856] rounded-3xl p-5 sm:p-6 text-white shadow-lg">
@@ -720,7 +1009,7 @@ export const ChallengeView: React.FC = () => {
             </button>
 
             <p className="text-center text-xs text-[#202B3C]/60">
-              Invite friends with a code: Share a link or 6-character room code.
+              Invite friends with a code, link, or direct in-app email invitation.
             </p>
           </div>
         </div>

@@ -2,7 +2,11 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useApp } from '../../context/AppContext';
 import { Question, ParticipantScore } from '../../types';
 import {
-  COINS_PER_CORRECT,
+  subscribeToChallengeRoom,
+  updateChallengeParticipantScoreInFirestore,
+  completeChallengeRoomInFirestore,
+} from '../../utils/firestoreSync';
+import {
   POINTS_PER_CORRECT,
   createScrambledTiles,
   evaluateQuestionAnswer,
@@ -18,12 +22,11 @@ import {
   X,
   Trophy,
   Users,
-  Coins,
   RotateCcw,
 } from 'lucide-react';
 
 export const ActiveGame: React.FC = () => {
-  const { currentGameSession, exitGame, finishGame, awardQuestionReward, user } = useApp();
+  const { currentGameSession, exitGame, finishGame, awardQuestionReward, user, authMode } = useApp();
 
   if (!currentGameSession) {
     return null;
@@ -47,7 +50,6 @@ export const ActiveGame: React.FC = () => {
   const [showMobileLeaderboard, setShowMobileLeaderboard] = useState(false);
   const [recentRewardBurst, setRecentRewardBurst] = useState<{
     points: number;
-    coins: number;
     key: number;
   } | null>(null);
 
@@ -55,14 +57,12 @@ export const ActiveGame: React.FC = () => {
   const [secondsRemaining, setSecondsRemaining] = useState(totalSeconds);
 
   const [currentScore, setCurrentScore] = useState(0);
-  const [sessionCoins, setSessionCoins] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
 
   const [liveLeaderboard, setLiveLeaderboard] = useState<ParticipantScore[]>(() => {
     return participants.map((p) => ({
       ...p,
       score: 0,
-      coins: 0,
       correctAnswers: 0,
       totalQuestions: questions.length,
       accuracy: 0,
@@ -73,6 +73,7 @@ export const ActiveGame: React.FC = () => {
   const hasCompletedRef = useRef(false);
   const submittedQuestionIdsRef = useRef<Set<string>>(new Set());
   const rewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const currentQ: Question | undefined = questions[currentIndex];
 
   // Reset per-question transient inputs when moving to a new question
@@ -101,9 +102,75 @@ export const ActiveGame: React.FC = () => {
   }, [selectedTileIds, scrambledTilePool]);
 
   const isCurrentPlayer = useCallback(
-    (p: ParticipantScore) => p.id === activePlayerId,
+    (p: ParticipantScore) => p.id === activePlayerId || (p.uid !== undefined && p.uid === activePlayerId),
     [activePlayerId]
   );
+
+  // Real-time challenge leaderboard sync (Firestore onSnapshot + /ws/challenges WebSocket)
+  useEffect(() => {
+    if (mode !== 'challenge' || !roomCode || roomCode.startsWith('QZ-')) return;
+
+    const mergeRemoteParticipants = (remoteParticipants: ParticipantScore[]) => {
+      if (!Array.isArray(remoteParticipants) || remoteParticipants.length === 0) return;
+      setLiveLeaderboard((prev) => {
+        const byId = new Map<string, ParticipantScore>();
+        for (const p of prev) byId.set(p.id, p);
+        for (const remote of remoteParticipants) {
+          if (remote.id === activePlayerId || remote.uid === activePlayerId) continue;
+          byId.set(remote.id, { ...remote, totalQuestions: questions.length });
+        }
+        return Array.from(byId.values());
+      });
+    };
+
+    let unsubFirestore: (() => void) | null = null;
+    if (authMode === 'firebase') {
+      try {
+        unsubFirestore = subscribeToChallengeRoom(roomCode, (room) => {
+          if (room?.participants) {
+            mergeRemoteParticipants(room.participants);
+          }
+        });
+      } catch {
+        // Fallback cleanly to WS / HTTP polling
+      }
+    }
+
+    // Also attach live WebSocket listener on same origin if available
+    try {
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(`${wsProto}//${window.location.host}/ws/challenges`);
+      wsRef.current = socket;
+      socket.onopen = () => {
+        socket.send(JSON.stringify({ type: 'subscribe', roomCode }));
+      };
+      socket.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg?.type === 'room_update' && msg.room?.participants) {
+            mergeRemoteParticipants(msg.room.participants);
+          }
+        } catch {
+          // ignore
+        }
+      };
+      socket.onerror = () => {};
+    } catch {
+      // Static deploy without Express WS relies cleanly on Firestore
+    }
+
+    return () => {
+      unsubFirestore?.();
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {
+          // ignore
+        }
+        wsRef.current = null;
+      }
+    };
+  }, [mode, roomCode, authMode, activePlayerId, questions.length]);
 
   // Countdown tick without calling finishGame inside state updater
   useEffect(() => {
@@ -127,30 +194,69 @@ export const ActiveGame: React.FC = () => {
     const totalQ = questions.length;
     const finalAccuracy = totalQ > 0 ? Math.round((correctCount / totalQ) * 100) : 0;
     const finalScore = currentScore;
-    const finalCoins = sessionCoins;
     const timeSpent = totalSeconds - secondsRemaining;
 
     const finalizedBoard = liveLeaderboard
-      .map((p) =>
-        isCurrentPlayer(p)
-          ? {
-              ...p,
-              score: finalScore,
-              coins: finalCoins,
-              correctAnswers: correctCount,
-              totalQuestions: totalQ,
-              accuracy: finalAccuracy,
-              completed: true,
-            }
-          : {
-              ...p,
-              totalQuestions: totalQ,
-              completed: true,
-            }
-      )
+      .map((p) => {
+        if (isCurrentPlayer(p)) {
+          return {
+            ...p,
+            score: finalScore,
+            correctAnswers: correctCount,
+            totalQuestions: totalQ,
+            accuracy: finalAccuracy,
+            completed: true,
+          };
+        }
+        if (p.isBot || p.id.startsWith('bot-')) {
+          return {
+            ...p,
+            totalQuestions: totalQ,
+            completed: true,
+          };
+        }
+        return {
+          ...p,
+          totalQuestions: totalQ,
+        };
+      })
       .sort((a, b) => b.score - a.score);
 
     if (roomCode && !roomCode.startsWith('QZ-')) {
+      if (authMode === 'firebase') {
+        void updateChallengeParticipantScoreInFirestore({
+          code: roomCode,
+          participantId: activePlayerId,
+          score: finalScore,
+          correctAnswers: correctCount,
+          totalQuestions: totalQ,
+          completed: true,
+        })
+          .then(() => {
+            const allHumansDone = finalizedBoard
+              .filter((p) => !p.isBot && !p.id.startsWith('bot-'))
+              .every((p) => p.completed);
+            if (allHumansDone) {
+              return completeChallengeRoomInFirestore(roomCode);
+            }
+          })
+          .catch(() => {});
+      }
+
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'score_progress',
+            roomCode,
+            playerId: activePlayerId,
+            score: finalScore,
+            correctAnswers: correctCount,
+            totalQuestions: totalQ,
+            completed: true,
+          })
+        );
+      }
+
       fetch(`/api/rooms/${roomCode}/score`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,7 +272,6 @@ export const ActiveGame: React.FC = () => {
     finishGame({
       score: finalScore,
       maxScore: totalQ * POINTS_PER_CORRECT,
-      coinsEarned: finalCoins,
       correctAnswers: correctCount,
       totalQuestions: totalQ,
       accuracy: finalAccuracy,
@@ -181,12 +286,12 @@ export const ActiveGame: React.FC = () => {
     questions.length,
     correctCount,
     currentScore,
-    sessionCoins,
     totalSeconds,
     secondsRemaining,
     liveLeaderboard,
     isCurrentPlayer,
     roomCode,
+    authMode,
     activePlayerId,
     finishGame,
     selectedAnswers,
@@ -223,19 +328,15 @@ export const ActiveGame: React.FC = () => {
 
     const isCorrect = evaluateQuestionAnswer(currentQ, trimmed);
     let pointsToAdd = 0;
-    let coinsToAdd = 0;
 
     if (isCorrect) {
-      const rewardResult = awardQuestionReward(sessionId, currentQ.id);
+      const rewardResult = awardQuestionReward(sessionId, currentQ.id, roomCode);
       if (rewardResult.awarded) {
         pointsToAdd = rewardResult.pointsAdded;
-        coinsToAdd = rewardResult.coinsAdded;
         setCurrentScore((prev) => prev + pointsToAdd);
-        setSessionCoins((prev) => prev + coinsToAdd);
         setCorrectCount((prev) => prev + 1);
         setRecentRewardBurst({
           points: pointsToAdd,
-          coins: coinsToAdd,
           key: Date.now(),
         });
         if (rewardTimerRef.current) clearTimeout(rewardTimerRef.current);
@@ -243,36 +344,84 @@ export const ActiveGame: React.FC = () => {
       }
     }
 
+    const nextScore = currentScore + pointsToAdd;
+    const nextCorrectCount = isCorrect ? correctCount + 1 : correctCount;
+
     setLiveLeaderboard((prev) =>
       prev.map((p) => {
         if (isCurrentPlayer(p)) {
-          const newCorrect = isCorrect ? p.correctAnswers + 1 : p.correctAnswers;
-          const newScore = p.score + pointsToAdd;
-          const newCoins = (p.coins || 0) + coinsToAdd;
           return {
             ...p,
-            score: newScore,
-            coins: newCoins,
-            correctAnswers: newCorrect,
-            accuracy: Math.round((newCorrect / (currentIndex + 1)) * 100),
+            score: nextScore,
+            correctAnswers: nextCorrectCount,
+            accuracy: Math.round((nextCorrectCount / (currentIndex + 1)) * 100),
           };
         }
-        if (mode === 'challenge') {
+        // Only simulate answers for explicit practice bot opponents; real humans sync via Firestore/WebSocket
+        if (mode === 'challenge' && (p.isBot || p.id.startsWith('bot-'))) {
           const peerCorrect = Math.random() < 0.65;
           const peerPoints = peerCorrect ? POINTS_PER_CORRECT : 0;
-          const peerCoins = peerCorrect ? COINS_PER_CORRECT : 0;
           const peerNewCorrect = peerCorrect ? p.correctAnswers + 1 : p.correctAnswers;
-          return {
+          const updatedBot = {
             ...p,
             score: p.score + peerPoints,
-            coins: (p.coins || 0) + peerCoins,
             correctAnswers: peerNewCorrect,
             accuracy: Math.round((peerNewCorrect / (currentIndex + 1)) * 100),
           };
+          if (roomCode && !roomCode.startsWith('QZ-') && authMode === 'firebase') {
+            void updateChallengeParticipantScoreInFirestore({
+              code: roomCode,
+              participantId: p.id,
+              score: updatedBot.score,
+              correctAnswers: updatedBot.correctAnswers,
+              totalQuestions: questions.length,
+              completed: currentIndex >= questions.length - 1,
+            }).catch(() => {});
+          }
+          return updatedBot;
         }
         return p;
       })
     );
+
+    // Sync live player progress immediately to Firestore & WebSocket
+    if (mode === 'challenge' && roomCode && !roomCode.startsWith('QZ-')) {
+      if (authMode === 'firebase') {
+        void updateChallengeParticipantScoreInFirestore({
+          code: roomCode,
+          participantId: activePlayerId,
+          score: nextScore,
+          correctAnswers: nextCorrectCount,
+          totalQuestions: questions.length,
+          completed: false,
+        }).catch(() => {});
+      }
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'score_progress',
+            roomCode,
+            playerId: activePlayerId,
+            score: nextScore,
+            correctAnswers: nextCorrectCount,
+            totalQuestions: questions.length,
+            completed: false,
+          })
+        );
+      } else {
+        fetch(`/api/rooms/${roomCode}/progress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            playerId: activePlayerId,
+            score: nextScore,
+            correctAnswers: nextCorrectCount,
+            totalQuestions: questions.length,
+            completed: false,
+          }),
+        }).catch(() => {});
+      }
+    }
   };
 
   const handleChoiceSubmit = (e: React.FormEvent) => {
@@ -347,7 +496,7 @@ export const ActiveGame: React.FC = () => {
           </div>
 
           <div className="flex items-center flex-wrap gap-2 relative">
-            {/* Live Rank, Points & Coins Badge */}
+            {/* Live Rank & Points Earned Badge */}
             <div className="flex items-center gap-1.5 sm:gap-2 bg-[#FFF0E3] border border-[#F47A18]/30 px-2.5 sm:px-3 py-1.5 rounded-xl shadow-xs tabular-nums">
               <Trophy size={15} className="text-[#F47A18] shrink-0" />
               <span className="text-xs font-extrabold text-[#F47A18]">
@@ -357,36 +506,17 @@ export const ActiveGame: React.FC = () => {
               <span className="text-xs font-extrabold text-[#172337]" data-testid="session-points">
                 {currentScore} pts
               </span>
-              <span className="text-xs text-[#202B3C]/30">•</span>
-              <span
-                className="text-xs font-extrabold text-amber-700 flex items-center gap-1"
-                data-testid="session-coins"
-              >
-                <Coins size={13} className="text-amber-600 shrink-0" />
-                {sessionCoins}
-              </span>
             </div>
 
-            {/* Account Coin Wallet */}
-            <div
-              className="hidden sm:flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-xl text-xs font-extrabold text-amber-800 tabular-nums"
-              title="Total Account Coins"
-              data-testid="wallet-coins"
-            >
-              <Coins size={13} className="text-amber-600 shrink-0" />
-              <span>Wallet: {user?.coins ?? 0}</span>
-            </div>
-
-            {/* Animated Floating Reward Burst */}
+            {/* Animated Floating +5 Points Notification */}
             {recentRewardBurst && (
               <div
                 key={recentRewardBurst.key}
-                className="animate-coin-pop pointer-events-none flex items-center gap-1 bg-[#239B70] text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-md"
+                data-testid="points-notification"
+                className="animate-points-pop pointer-events-none flex items-center gap-1 bg-[#239B70] text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-md"
               >
-                <Coins size={12} className="text-amber-200" />
-                <span>
-                  +{recentRewardBurst.points} pts · +{recentRewardBurst.coins} coins!
-                </span>
+                <Trophy size={12} className="text-amber-200" />
+                <span>+{recentRewardBurst.points} Points!</span>
               </div>
             )}
 
@@ -453,7 +583,7 @@ export const ActiveGame: React.FC = () => {
                   </span>
                   <div className="flex items-center gap-2 tabular-nums">
                     <span className="text-[#F47A18] font-bold">
-                      +{POINTS_PER_CORRECT} pts &amp; +{COINS_PER_CORRECT} coins / correct
+                      +{POINTS_PER_CORRECT} Points / correct
                     </span>
                   </div>
                 </div>
@@ -536,7 +666,7 @@ export const ActiveGame: React.FC = () => {
                                       <CheckCircle2 size={18} />
                                       <span className="hidden sm:inline">
                                         {isSubmittedChoice
-                                          ? `+${POINTS_PER_CORRECT} pts · +${COINS_PER_CORRECT} coins`
+                                          ? `+${POINTS_PER_CORRECT} Points!`
                                           : 'Correct answer'}
                                       </span>
                                     </span>
@@ -574,8 +704,7 @@ export const ActiveGame: React.FC = () => {
                             <>
                               <CheckCircle2 size={16} />
                               <span>
-                                Correct! Earned +{POINTS_PER_CORRECT} pts &amp; +{COINS_PER_CORRECT}{' '}
-                                coins.
+                                Correct! +{POINTS_PER_CORRECT} Points!
                               </span>
                             </>
                           ) : (
@@ -706,8 +835,7 @@ export const ActiveGame: React.FC = () => {
                             <>
                               <CheckCircle2 size={16} />
                               <span>
-                                Unscrambled correctly! Earned +{POINTS_PER_CORRECT} pts &amp; +
-                                {COINS_PER_CORRECT} coins.
+                                Unscrambled correctly! +{POINTS_PER_CORRECT} Points!
                               </span>
                             </>
                           ) : (
@@ -721,13 +849,11 @@ export const ActiveGame: React.FC = () => {
                     </form>
                   )}
 
-                  {/* 3. IDENTIFICATION & FILL IN THE BLANKS (Strict Text Input ONLY, Never Options) */}
-                  {(currentQ.type === 'identification' || currentQ.type === 'fill_blank') && (
+                  {/* 3. IDENTIFICATION (Strict Text Input ONLY, Never Options) */}
+                  {currentQ.type === 'identification' && (
                     <form onSubmit={handleTextSubmit} className="space-y-3">
                       <p className="text-xs font-semibold text-[#202B3C]/65">
-                        {currentQ.type === 'identification'
-                          ? 'Type the exact term, name, or concept (case & extra spaces ignored):'
-                          : 'Type the missing word or phrase to complete the statement:'}
+                        Type the exact term, name, or concept (case &amp; extra spaces ignored):
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2.5">
                         <input
@@ -735,11 +861,7 @@ export const ActiveGame: React.FC = () => {
                           disabled={isAnswerLocked}
                           value={isAnswerLocked ? currentAnswer || textInput : textInput}
                           onChange={(e) => setTextInput(e.target.value)}
-                          placeholder={
-                            currentQ.type === 'identification'
-                              ? 'Type the term or concept...'
-                              : 'Type the missing word...'
-                          }
+                          placeholder="Type the term or concept..."
                           className="flex-1 p-3.5 sm:p-4 rounded-2xl bg-[#F7F4EF] border border-[#E8E4DC] text-sm sm:text-base font-semibold text-[#172337] focus:outline-none focus:border-[#F47A18]"
                         />
                         {!isAnswerLocked && (
@@ -765,8 +887,7 @@ export const ActiveGame: React.FC = () => {
                             <>
                               <CheckCircle2 size={16} />
                               <span>
-                                Correct! Earned +{POINTS_PER_CORRECT} pts &amp; +{COINS_PER_CORRECT}{' '}
-                                coins.
+                                Correct! +{POINTS_PER_CORRECT} Points!
                               </span>
                             </>
                           ) : (
@@ -799,8 +920,7 @@ export const ActiveGame: React.FC = () => {
             {/* BOTTOM QUESTION CONTROLS */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
               <p className="text-xs text-[#202B3C]/55 text-center sm:text-left">
-                Each correct answer immediately rewards +{POINTS_PER_CORRECT} points &amp; +
-                {COINS_PER_CORRECT} coins to your account!
+                Each correct answer rewards +{POINTS_PER_CORRECT} points to your account!
               </p>
 
               <button
@@ -890,9 +1010,6 @@ export const ActiveGame: React.FC = () => {
                         <span className="text-xs font-extrabold text-[#172337] block">
                           {item.score} pts
                         </span>
-                        <span className="text-[10px] font-bold text-amber-700 block">
-                          {item.coins ?? item.score} coins
-                        </span>
                       </div>
                     </div>
                   );
@@ -901,8 +1018,7 @@ export const ActiveGame: React.FC = () => {
 
               <div className="p-3 rounded-2xl bg-[#F7F4EF] text-[11px] text-[#202B3C]/65 leading-relaxed text-center">
                 🎯 Correct answers earn{' '}
-                <span className="font-bold text-[#F47A18]">+{POINTS_PER_CORRECT} points</span> &amp;{' '}
-                <span className="font-bold text-amber-700">+{COINS_PER_CORRECT} coins</span>.
+                <span className="font-bold text-[#F47A18]">+{POINTS_PER_CORRECT} points</span>.
                 Incorrect or unanswered earn 0.
               </div>
             </div>
@@ -949,7 +1065,7 @@ export const ActiveGame: React.FC = () => {
                       </span>
                     </div>
                     <span className="text-xs font-extrabold text-[#172337] shrink-0 tabular-nums">
-                      {item.score} pts · {item.coins ?? item.score} coins
+                      {item.score} pts
                     </span>
                   </div>
                 );
@@ -957,7 +1073,7 @@ export const ActiveGame: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-[#202B3C]/60 text-center">
-              Session leaderboard starts at 0 for each quiz; earned coins persist in your account.
+              Session leaderboard starts at 0 for each quiz; earned points persist in your account.
             </p>
 
             <button
@@ -980,7 +1096,7 @@ export const ActiveGame: React.FC = () => {
             </div>
             <h3 className="text-lg font-bold text-[#172337]">Exit Quiz &amp; Reset?</h3>
             <p className="text-xs text-[#202B3C]/70">
-              Exiting will end this match. Any points and coins already earned on submitted correct answers remain safely in your account.
+              Exiting will end this match. Any points already earned on submitted correct answers remain safely in your account.
             </p>
             <div className="grid grid-cols-2 gap-3 pt-3">
               <button

@@ -20,9 +20,7 @@ import {
   Award,
   Layers,
   Target,
-  Lightbulb,
-  Trophy,
-  Coins
+  Lightbulb
 } from 'lucide-react';
 
 export const HomeDashboard: React.FC = () => {
@@ -132,39 +130,6 @@ export const HomeDashboard: React.FC = () => {
 
         {/* Soft ambient glow */}
         <div className="absolute -right-10 -bottom-10 w-72 h-72 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-      </div>
-
-      {/* Account Points & Coins Balance Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 tabular-nums">
-        <div className="quizian-card bg-white rounded-2xl p-4 sm:p-5 border border-[#EBE7DF] shadow-xs flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#202B3C]/60 block">
-              Total Points
-            </span>
-            <div className="text-2xl sm:text-3xl font-extrabold text-[#F47A18] font-['Outfit'] mt-0.5" data-testid="dashboard-total-points">
-              {(user?.totalPoints ?? 0).toLocaleString()} pts
-            </div>
-            <p className="text-[11px] text-[#202B3C]/60 mt-0.5">+5 pts per correct answer</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-[#FFF0E3] text-[#F47A18] flex items-center justify-center shrink-0">
-            <Trophy size={22} />
-          </div>
-        </div>
-
-        <div className="quizian-card bg-white rounded-2xl p-4 sm:p-5 border border-[#EBE7DF] shadow-xs flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#202B3C]/60 block">
-              Coins Balance
-            </span>
-            <div className="text-2xl sm:text-3xl font-extrabold text-amber-700 font-['Outfit'] mt-0.5" data-testid="dashboard-coins">
-              {(user?.coins ?? 0).toLocaleString()} coins
-            </div>
-            <p className="text-[11px] text-[#202B3C]/60 mt-0.5">+5 coins per correct answer</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200/60 text-amber-600 flex items-center justify-center shrink-0">
-            <Coins size={22} />
-          </div>
-        </div>
       </div>
 
       {/* Enhanced Summary KPI Cards */}

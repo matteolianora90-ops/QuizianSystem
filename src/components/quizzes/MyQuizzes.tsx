@@ -135,6 +135,7 @@ export const MyQuizzes: React.FC = () => {
           </div>
         </div>
         <button
+          type="button"
           onClick={() => setActiveScreen('generate')}
           className="w-full md:w-auto py-3 px-6 rounded-2xl bg-[#F47A18] hover:bg-[#e0690f] text-white font-bold text-sm shadow-md shadow-[#F47A18]/20 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
         >
@@ -207,8 +208,10 @@ export const MyQuizzes: React.FC = () => {
           />
           {searchQuery && (
             <button
+              type="button"
+              aria-label="Clear search"
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#202B3C]/40 hover:text-[#172337]"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#202B3C]/40 hover:text-[#172337] cursor-pointer"
             >
               <X size={16} />
             </button>
@@ -221,6 +224,7 @@ export const MyQuizzes: React.FC = () => {
             {['All', 'Easy', 'Medium', 'Hard'].map((diff) => (
               <button
                 key={diff}
+                type="button"
                 onClick={() => setSelectedDifficulty(diff)}
                 className={`py-1.5 px-3.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                   selectedDifficulty === diff
@@ -254,8 +258,9 @@ export const MyQuizzes: React.FC = () => {
               {searchQuery ? `No saved quiz matches "${searchQuery}"` : 'You have not created any quizzes yet.'}
             </p>
             <button
+              type="button"
               onClick={() => setActiveScreen('generate')}
-              className="py-2.5 px-5 rounded-xl bg-[#F47A18] text-white text-xs font-bold hover:bg-[#e0690f] transition-colors"
+              className="py-2.5 px-5 rounded-xl bg-[#F47A18] text-white text-xs font-bold hover:bg-[#e0690f] transition-colors cursor-pointer"
             >
               + Generate Your First Quiz
             </button>
@@ -314,6 +319,7 @@ export const MyQuizzes: React.FC = () => {
                 {/* Card Actions */}
                 <div className="pt-4 mt-2 grid grid-cols-2 gap-2">
                   <button
+                    type="button"
                     onClick={() => startGame(quiz, 'solo')}
                     className="py-2 px-3 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                   >
@@ -321,6 +327,7 @@ export const MyQuizzes: React.FC = () => {
                     <span>Practice</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleChallengeLaunch(quiz)}
                     className="py-2 px-3 rounded-xl bg-[#172337] hover:bg-[#202B3C] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
@@ -329,8 +336,9 @@ export const MyQuizzes: React.FC = () => {
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => handleOpenPreview(quiz, 'questions')}
-                    className="py-1.5 px-3 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-semibold text-[#202B3C]/80 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                    className="py-2 px-3 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-semibold text-[#202B3C]/80 flex items-center justify-center gap-1 transition-colors cursor-pointer"
                   >
                     <Eye size={13} />
                     <span>Preview</span>
@@ -339,24 +347,29 @@ export const MyQuizzes: React.FC = () => {
                   <div className="flex items-center gap-1">
                     {getStudyMaterialForQuiz(quiz) && (
                       <button
+                        type="button"
+                        aria-label="View Saved Study Material"
                         onClick={() => handleOpenPreview(quiz, 'material')}
-                        className="p-1.5 rounded-xl border border-[#E8E4DC] hover:bg-[#FFF0E3] hover:text-[#F47A18] hover:border-[#F47A18]/30 text-[#202B3C]/70 transition-colors cursor-pointer"
+                        className="p-2 rounded-xl border border-[#E8E4DC] hover:bg-[#FFF0E3] hover:text-[#F47A18] hover:border-[#F47A18]/30 text-[#202B3C]/70 transition-colors cursor-pointer"
                         title="View Saved Study Material"
                       >
                         <FileText size={13} />
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => setEditingQuiz(quiz)}
-                      className="flex-1 py-1.5 px-2 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-semibold text-[#202B3C]/80 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                      className="flex-1 py-2 px-2 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-semibold text-[#202B3C]/80 flex items-center justify-center gap-1 transition-colors cursor-pointer"
                       title="Edit Quiz"
                     >
                       <Edit3 size={13} />
                       <span>Edit</span>
                     </button>
                     <button
+                      type="button"
+                      aria-label="Delete Quiz"
                       onClick={() => setQuizToDelete(quiz)}
-                      className="p-1.5 rounded-xl border border-[#E8E4DC] hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-[#202B3C]/50 transition-colors cursor-pointer"
+                      className="p-2 rounded-xl border border-[#E8E4DC] hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-[#202B3C]/50 transition-colors cursor-pointer"
                       title="Delete Quiz"
                     >
                       <Trash2 size={13} />
@@ -502,7 +515,7 @@ export const MyQuizzes: React.FC = () => {
             <div>
               <p className="text-sm font-bold text-[#172337]">Choose question types</p>
               <p className="text-xs text-[#202B3C]/70 mt-0.5">
-                Mix Multiple Choice, Fill in the Blanks, Identification, and Scrambled Words.
+                Mix Multiple Choice, Identification, and Scrambled Words.
               </p>
             </div>
           </div>
@@ -540,8 +553,10 @@ export const MyQuizzes: React.FC = () => {
                     </p>
                   </div>
                   <button
+                    type="button"
+                    aria-label="Close preview"
                     onClick={() => setPreviewQuiz(null)}
-                    className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer shrink-0"
+                    className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer shrink-0"
                   >
                     <X size={18} />
                   </button>
@@ -627,18 +642,20 @@ export const MyQuizzes: React.FC = () => {
 
               <div className="p-4 border-t border-[#F0EEE9] bg-[#FAFAF8] flex items-center justify-end gap-3">
                 <button
+                  type="button"
                   onClick={() => setPreviewQuiz(null)}
-                  className="py-2 px-4 rounded-xl border border-[#E8E4DC] hover:bg-white text-xs font-bold text-[#202B3C]"
+                  className="py-2 px-4 rounded-xl border border-[#E8E4DC] hover:bg-white text-xs font-bold text-[#202B3C] cursor-pointer"
                 >
                   Close
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     const q = previewQuiz;
                     setPreviewQuiz(null);
                     startGame(q, 'solo');
                   }}
-                  className="py-2 px-5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold flex items-center gap-1.5"
+                  className="py-2 px-5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <Play size={13} fill="currentColor" />
                   <span>Practice Now</span>
@@ -674,17 +691,19 @@ export const MyQuizzes: React.FC = () => {
             </p>
             <div className="grid grid-cols-2 gap-3">
               <button
+                type="button"
                 onClick={() => setQuizToDelete(null)}
-                className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-bold text-[#202B3C]"
+                className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-bold text-[#202B3C] cursor-pointer"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={() => {
                   deleteQuiz(quizToDelete.id);
                   setQuizToDelete(null);
                 }}
-                className="py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold"
+                className="py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
               >
                 Delete
               </button>
@@ -712,8 +731,9 @@ export const MyQuizzes: React.FC = () => {
               </div>
               <button
                 type="button"
+                aria-label="Close study material"
                 onClick={() => setViewingMaterial(null)}
-                className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer shrink-0"
+                className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer shrink-0"
               >
                 <X size={18} />
               </button>
@@ -798,8 +818,10 @@ export const MyQuizzes: React.FC = () => {
 
 // Reusable renderer for study material content (text notes, uploaded images, uploaded PDFs)
 const StudyMaterialContent: React.FC<{ material: StudyMaterial; onCopy: () => void }> = ({ material, onCopy }) => {
-  const isImage = material.sourceType === 'image' && !!material.fileDataUrl;
-  const isPdf = material.sourceType === 'pdf' && !!material.fileDataUrl;
+  const rawUrl = material.fileDataUrl || '';
+  const hasSafeDataUrl = rawUrl.startsWith('data:');
+  const isImage = material.sourceType === 'image' && rawUrl.startsWith('data:image/');
+  const isPdf = material.sourceType === 'pdf' && rawUrl.startsWith('data:application/pdf');
 
   return (
     <div className="space-y-4">
@@ -819,9 +841,9 @@ const StudyMaterialContent: React.FC<{ material: StudyMaterial; onCopy: () => vo
               <span>Copy Notes</span>
             </button>
           )}
-          {material.fileDataUrl && (
+          {hasSafeDataUrl && (
             <a
-              href={material.fileDataUrl}
+              href={rawUrl}
               download={material.fileName || `${material.title}.${material.sourceType}`}
               className="py-1.5 px-3 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-bold text-[#172337] flex items-center gap-1.5"
             >
@@ -889,6 +911,12 @@ const AddStudyMaterialModal: React.FC<{
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File exceeds the 10 MB size limit. Please upload a smaller study file.');
+      e.target.value = '';
+      return;
+    }
+    setError(null);
     const size = `${(file.size / 1024).toFixed(1)} KB`;
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     const isImage = file.type.startsWith('image/');
@@ -909,6 +937,11 @@ const AddStudyMaterialModal: React.FC<{
       reader.readAsDataURL(file);
     } else if (isDocx) {
       const text = await extractDocxText(file);
+      if (!text.trim()) {
+        setError('Could not extract readable text from this Word document.');
+        e.target.value = '';
+        return;
+      }
       setUploaded({
         name: file.name,
         size,
@@ -918,6 +951,11 @@ const AddStudyMaterialModal: React.FC<{
       if (!title.trim()) setTitle(file.name.replace(/\.[^/.]+$/, ''));
     } else {
       const raw = await file.text().catch(() => '');
+      if (!raw.trim()) {
+        setError('The selected text file appears to be empty.');
+        e.target.value = '';
+        return;
+      }
       setUploaded({
         name: file.name,
         size,
@@ -939,6 +977,7 @@ const AddStudyMaterialModal: React.FC<{
       setError('Please paste study notes or upload a file.');
       return;
     }
+    setError(null);
     const today = new Date().toISOString().split('T')[0];
     onSave({
       id: `mat-${Date.now()}`,
@@ -966,8 +1005,9 @@ const AddStudyMaterialModal: React.FC<{
           </div>
           <button
             type="button"
+            aria-label="Close modal"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer"
+            className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer"
           >
             <X size={18} />
           </button>
@@ -1103,13 +1143,56 @@ const EditQuizModal: React.FC<EditQuizModalProps> = ({ quiz, onClose, onSave }) 
       setErrorMsg('Please enter a quiz title before saving.');
       return;
     }
+    if (questions.length === 0) {
+      setErrorMsg('A quiz must have at least one question.');
+      return;
+    }
+
+    const cleanedQuestions: Question[] = [];
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const prompt = q.question.trim();
+      const answer = q.correctAnswer.trim();
+      if (!prompt || !answer) {
+        setErrorMsg(`Question ${i + 1} must have both a question prompt and a correct answer.`);
+        return;
+      }
+      if (q.type === 'multiple_choice') {
+        const cleanOptions = (q.options || []).map((o) => o.trim()).filter(Boolean);
+        if (cleanOptions.length < 2) {
+          setErrorMsg(`Question ${i + 1} (Multiple Choice) requires at least 2 non-empty options.`);
+          return;
+        }
+        const matchedOption = cleanOptions.find((o) => o.toLowerCase() === answer.toLowerCase());
+        if (!matchedOption) {
+          setErrorMsg(`Question ${i + 1}: select one of the options as the correct answer.`);
+          return;
+        }
+        cleanedQuestions.push({
+          ...q,
+          question: prompt,
+          options: cleanOptions,
+          correctAnswer: matchedOption,
+          explanation: (q.explanation || '').trim(),
+        });
+      } else {
+        cleanedQuestions.push({
+          ...q,
+          question: prompt,
+          options: [],
+          correctAnswer: answer,
+          explanation: (q.explanation || '').trim(),
+        });
+      }
+    }
+
     setErrorMsg(null);
     onSave({
       ...quiz,
       title: title.trim(),
       description: description.trim(),
       difficulty,
-      questions,
+      questions: cleanedQuestions,
     });
   };
 
@@ -1127,8 +1210,9 @@ const EditQuizModal: React.FC<EditQuizModalProps> = ({ quiz, onClose, onSave }) 
           </div>
           <button
             type="button"
+            aria-label="Close edit quiz modal"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer shrink-0"
+            className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 cursor-pointer shrink-0"
           >
             <X size={18} />
           </button>
@@ -1249,8 +1333,8 @@ const EditQuizModal: React.FC<EditQuizModalProps> = ({ quiz, onClose, onSave }) 
                   </div>
                 )}
 
-                {/* For Fill in Blanks, Identification, or Scrambled Word */}
-                {(q.type === 'fill_blank' || q.type === 'identification' || q.type === 'scrambled_word') && (
+                {/* For Identification or Scrambled Word */}
+                {(q.type === 'identification' || q.type === 'scrambled_word') && (
                   <div>
                     <label className="text-[11px] font-bold text-[#202B3C]/60 uppercase mb-1 block">
                       Correct Answer:
@@ -1280,12 +1364,14 @@ const EditQuizModal: React.FC<EditQuizModalProps> = ({ quiz, onClose, onSave }) 
 
         <div className="p-4 border-t border-[#F0EEE9] bg-[#FAFAF8] flex items-center justify-end gap-3">
           <button
+            type="button"
             onClick={onClose}
-            className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] hover:bg-white text-xs font-bold text-[#202B3C]"
+            className="py-2.5 px-4 rounded-xl border border-[#E8E4DC] hover:bg-white text-xs font-bold text-[#202B3C] cursor-pointer"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSave}
             className="py-2.5 px-5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold shadow-xs cursor-pointer"
           >

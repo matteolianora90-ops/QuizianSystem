@@ -1,0 +1,520 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && 'email' in request.auth.token
+        && request.auth.token.email is string;
+    }
+
+    function authEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidRoomCode(code) {
+      return code is string && code.size() >= 4 && code.size() <= 16 && code.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 3. Entity Validation Blueprints (No existing()/diff() inside create/update helpers)
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'id', 'name', 'email', 'avatar', 'role',
+          'totalPoints', 'settings', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'email', 'avatar', 'school', 'bio', 'role',
+          'totalPoints', 'settings', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 8
+        && (!('school' in data) || (data.school is string && data.school.size() <= 160))
+        && (!('bio' in data) || (data.bio is string && data.bio.size() <= 300))
+        && data.role is string && data.role in ['student', 'educator']
+        && data.totalPoints is number && data.totalPoints >= 0 && data.totalPoints <= 10000000
+        && data.settings is map
+        && data.settings.keys().hasOnly([
+          'notifications', 'challengeAlerts', 'studyReminders',
+          'soundEffects', 'theme', 'reminderConfig'
+        ])
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidQuiz(data, userId, quizId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'title', 'description', 'category',
+          'difficulty', 'questions', 'timesPlayed', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'title', 'description', 'category', 'difficulty',
+          'questions', 'timesPlayed', 'studyMaterialId', 'studyMaterialSummary',
+          'createdDate', 'updatedDate', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == quizId
+        && data.ownerId is string && data.ownerId == userId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 600
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+        && data.difficulty is string && data.difficulty in ['Easy', 'Medium', 'Hard']
+        && data.questions is list && data.questions.size() >= 1 && data.questions.size() <= 35
+        && data.questions[0] is map
+        && data.timesPlayed is number && data.timesPlayed >= 0 && data.timesPlayed <= 1000000
+        && (!('studyMaterialId' in data) || (data.studyMaterialId is string && data.studyMaterialId.size() <= 128))
+        && (!('studyMaterialSummary' in data) || (data.studyMaterialSummary is string && data.studyMaterialSummary.size() <= 500))
+        && (!('createdDate' in data) || (data.createdDate is string && data.createdDate.size() <= 32))
+        && (!('updatedDate' in data) || (data.updatedDate is string && data.updatedDate.size() <= 32))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStudyMaterial(data, userId, materialId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'title', 'sourceType', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'quizId', 'title', 'sourceType',
+          'fileName', 'fileSize', 'mimeType', 'textContent',
+          'createdDate', 'updatedDate', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == materialId
+        && data.ownerId is string && data.ownerId == userId
+        && (!('quizId' in data) || (data.quizId is string && data.quizId.size() <= 128))
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.sourceType is string && data.sourceType in ['notes', 'txt', 'pdf', 'docx', 'image']
+        && (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 200))
+        && (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 40))
+        && (!('mimeType' in data) || (data.mimeType is string && data.mimeType.size() <= 100))
+        && (!('textContent' in data) || (data.textContent is string && data.textContent.size() <= 120000))
+        && (!('createdDate' in data) || (data.createdDate is string && data.createdDate.size() <= 32))
+        && (!('updatedDate' in data) || (data.updatedDate is string && data.updatedDate.size() <= 32))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidActivityRecord(data, userId, activityId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'quizId', 'quizTitle', 'date', 'timestamp',
+          'score', 'maxScore', 'correctCount', 'totalQuestions',
+          'accuracy', 'type', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'quizId', 'quizTitle', 'date', 'timestamp',
+          'score', 'maxScore', 'correctCount', 'totalQuestions',
+          'accuracy', 'type', 'opponentCount', 'rank', 'leaderboard', 'createdAt'
+        ])
+        && data.id is string && data.id == activityId
+        && data.ownerId is string && data.ownerId == userId
+        && data.quizId is string && data.quizId.size() >= 1 && data.quizId.size() <= 128
+        && data.quizTitle is string && data.quizTitle.size() >= 1 && data.quizTitle.size() <= 200
+        && data.date is string && data.date.size() >= 1 && data.date.size() <= 80
+        && data.timestamp is number && data.timestamp >= 0
+        && data.score is number && data.score >= 0 && data.score <= 10000
+        && data.maxScore is number && data.maxScore >= 0 && data.maxScore <= 10000
+        && data.correctCount is number && data.correctCount >= 0 && data.correctCount <= 200
+        && data.totalQuestions is number && data.totalQuestions >= 1 && data.totalQuestions <= 200
+        && data.accuracy is number && data.accuracy >= 0 && data.accuracy <= 100
+        && data.type is string && data.type in ['solo', 'challenge']
+        && (!('opponentCount' in data) || (data.opponentCount is number && data.opponentCount >= 0 && data.opponentCount <= 10))
+        && (!('rank' in data) || (data.rank is number && data.rank >= 1 && data.rank <= 10))
+        && (!('leaderboard' in data) || (data.leaderboard is list && data.leaderboard.size() <= 10))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChallengeRoom(data, roomCode) {
+      return data.keys().hasAll([
+          'code', 'title', 'quizId', 'questions', 'maxPlayers',
+          'timeLimitMinutes', 'mode', 'status', 'hostId',
+          'hostName', 'hostAvatar', 'participantIds', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'code', 'title', 'quizId', 'questions', 'maxPlayers',
+          'timeLimitMinutes', 'mode', 'status', 'hostId',
+          'hostName', 'hostAvatar', 'participantIds', 'createdAt', 'updatedAt'
+        ])
+        && data.code is string && data.code == roomCode && isValidRoomCode(data.code)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.quizId is string && data.quizId.size() >= 1 && data.quizId.size() <= 128
+        && data.questions is list && data.questions.size() >= 1 && data.questions.size() <= 35
+        && data.questions[0] is map
+        && data.maxPlayers is number && data.maxPlayers >= 2 && data.maxPlayers <= 6
+        && data.timeLimitMinutes is number && data.timeLimitMinutes >= 1 && data.timeLimitMinutes <= 60
+        && data.mode is string && data.mode in ['Normal', 'Hard']
+        && data.status is string && data.status in ['waiting', 'active', 'completed']
+        && data.hostId is string && data.hostId.size() >= 1 && data.hostId.size() <= 128
+        && data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 120
+        && data.hostAvatar is string && data.hostAvatar.size() >= 1 && data.hostAvatar.size() <= 8
+        && data.participantIds is list && data.participantIds.size() >= 1 && data.participantIds.size() <= 6
+        && data.participantIds[0] is string
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChallengeParticipant(data, roomCode, participantId) {
+      return data.keys().hasAll([
+          'id', 'roomCode', 'uid', 'name', 'avatar', 'isHost', 'isBot',
+          'score', 'correctAnswers', 'totalQuestions',
+          'accuracy', 'completed', 'joinedAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'roomCode', 'uid', 'name', 'avatar', 'isHost', 'isBot',
+          'score', 'correctAnswers', 'totalQuestions',
+          'accuracy', 'completed', 'joinedAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == participantId
+        && data.roomCode is string && data.roomCode == roomCode
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 8
+        && data.isHost is bool
+        && data.isBot is bool
+        && data.score is number && data.score >= 0 && data.score <= 10000
+        && data.correctAnswers is number && data.correctAnswers >= 0 && data.correctAnswers <= 200
+        && data.totalQuestions is number && data.totalQuestions >= 1 && data.totalQuestions <= 200
+        && data.accuracy is number && data.accuracy >= 0 && data.accuracy <= 100
+        && data.completed is bool
+        && data.joinedAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChallengeInvitation(data, invitationId) {
+      return data.keys().hasAll([
+          'id', 'roomCode', 'quizTitle', 'senderUid', 'senderName',
+          'recipientEmail', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'roomCode', 'quizTitle', 'senderUid', 'senderName',
+          'recipientEmail', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == invitationId
+        && data.roomCode is string && isValidRoomCode(data.roomCode)
+        && data.quizTitle is string && data.quizTitle.size() >= 1 && data.quizTitle.size() <= 200
+        && data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 120
+        && data.recipientEmail is string && data.recipientEmail.size() >= 3 && data.recipientEmail.size() <= 160
+        && data.status is string && data.status in ['pending', 'accepted', 'declined', 'cancelled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // 4. Collection Rules
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().role == 'student'
+        && incoming().totalPoints >= 0 && incoming().totalPoints <= 100
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().id == existing().id
+        && incoming().role == existing().role
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update profile details / settings
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'email', 'avatar', 'school', 'bio', 'settings', 'updatedAt'
+          ])
+          ||
+          // Action: Earn +5 points rewards
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly(['totalPoints', 'updatedAt'])
+            && incoming().totalPoints >= existing().totalPoints
+            && incoming().totalPoints <= existing().totalPoints + 200
+          )
+          ||
+          // Action: One-time cleanup removing deprecated coins field from legacy user docs
+          (
+            ('coins' in existing())
+            && !('coins' in incoming())
+            && incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'updatedAt'])
+          )
+        );
+
+      allow delete: if false;
+
+      match /quizzes/{quizId} {
+        allow get: if isValidId(userId) && isValidId(quizId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+
+        allow create: if isValidId(userId)
+          && isValidId(quizId)
+          && isOwner(userId)
+          && isValidQuiz(incoming(), userId, quizId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+
+        allow update: if isValidId(userId)
+          && isValidId(quizId)
+          && isOwner(userId)
+          && isValidQuiz(incoming(), userId, quizId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'description', 'category', 'difficulty', 'questions',
+              'studyMaterialId', 'studyMaterialSummary', 'updatedDate', 'updatedAt'
+            ])
+            ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['timesPlayed', 'updatedAt'])
+          );
+
+        allow delete: if isValidId(userId) && isValidId(quizId) && isOwner(userId);
+      }
+
+      match /studyMaterials/{materialId} {
+        allow get: if isValidId(userId) && isValidId(materialId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+
+        allow create: if isValidId(userId)
+          && isValidId(materialId)
+          && isOwner(userId)
+          && isValidStudyMaterial(incoming(), userId, materialId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+
+        allow update: if isValidId(userId)
+          && isValidId(materialId)
+          && isOwner(userId)
+          && isValidStudyMaterial(incoming(), userId, materialId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'quizId', 'title', 'sourceType', 'fileName', 'fileSize',
+            'mimeType', 'textContent', 'updatedDate', 'updatedAt'
+          ]);
+
+        allow delete: if isValidId(userId) && isValidId(materialId) && isOwner(userId);
+      }
+
+      match /activities/{activityId} {
+        allow get: if isValidId(userId) && isValidId(activityId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+
+        allow create: if isValidId(userId)
+          && isValidId(activityId)
+          && isOwner(userId)
+          && isValidActivityRecord(incoming(), userId, activityId)
+          && incoming().createdAt == request.time;
+
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(activityId) && isOwner(userId);
+      }
+    }
+
+    match /challengeRooms/{roomCode} {
+      // Exact room code lookup allowed for signed-in users so invited friends can join by code
+      allow get: if isSignedIn() && isValidRoomCode(roomCode);
+      // List queries strictly restricted to rooms where user is host or joined participant
+      allow list: if isSignedIn()
+        && (resource.data.hostId == request.auth.uid || request.auth.uid in resource.data.participantIds);
+
+      allow create: if isSignedIn()
+        && isValidRoomCode(roomCode)
+        && isValidChallengeRoom(incoming(), roomCode)
+        && incoming().hostId == request.auth.uid
+        && incoming().status == 'waiting'
+        && incoming().participantIds == [request.auth.uid]
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidRoomCode(roomCode)
+        && isValidChallengeRoom(incoming(), roomCode)
+        && existing().status != 'completed'
+        && incoming().code == existing().code
+        && incoming().hostId == existing().hostId
+        && incoming().quizId == existing().quizId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Friend joins waiting room (appending only themselves)
+          (
+            existing().status == 'waiting'
+            && incoming().status == 'waiting'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['participantIds', 'updatedAt'])
+            && incoming().participantIds.hasAll(existing().participantIds)
+            && incoming().participantIds.size() <= existing().maxPlayers
+            && request.auth.uid in incoming().participantIds
+          )
+          ||
+          // Action 2: Host starts the challenge (waiting -> active)
+          (
+            existing().hostId == request.auth.uid
+            && existing().status == 'waiting'
+            && incoming().status == 'active'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          ||
+          // Action 3: Host or participant marks challenge completed (active -> completed)
+          (
+            (existing().hostId == request.auth.uid || request.auth.uid in existing().participantIds)
+            && existing().status == 'active'
+            && incoming().status == 'completed'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isSignedIn()
+        && isValidRoomCode(roomCode)
+        && existing().hostId == request.auth.uid;
+
+      match /participants/{participantId} {
+        allow get: if isSignedIn()
+          && isValidRoomCode(roomCode)
+          && isValidId(participantId)
+          && exists(/databases/$(database)/documents/challengeRooms/$(roomCode));
+
+        allow list: if isSignedIn()
+          && isValidRoomCode(roomCode)
+          && resource.data.roomCode == roomCode;
+
+        allow create: if isSignedIn()
+          && isValidRoomCode(roomCode)
+          && isValidId(participantId)
+          && isValidChallengeParticipant(incoming(), roomCode, participantId)
+          && incoming().joinedAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/challengeRooms/$(roomCode))
+          && get(/databases/$(database)/documents/challengeRooms/$(roomCode)).data.status == 'waiting'
+          && (
+            (
+              participantId == request.auth.uid
+              && incoming().uid == request.auth.uid
+              && incoming().isBot == false
+              && incoming().score == 0
+              && incoming().correctAnswers == 0
+              && incoming().completed == false
+            )
+            ||
+            (
+              incoming().isBot == true
+              && incoming().isHost == false
+              && incoming().uid == get(/databases/$(database)/documents/challengeRooms/$(roomCode)).data.hostId
+              && get(/databases/$(database)/documents/challengeRooms/$(roomCode)).data.hostId == request.auth.uid
+            )
+          );
+
+        allow update: if isSignedIn()
+          && isValidRoomCode(roomCode)
+          && isValidId(participantId)
+          && isValidChallengeParticipant(incoming(), roomCode, participantId)
+          && incoming().id == existing().id
+          && incoming().roomCode == existing().roomCode
+          && incoming().uid == existing().uid
+          && incoming().isHost == existing().isHost
+          && incoming().isBot == existing().isBot
+          && incoming().joinedAt == existing().joinedAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'score', 'correctAnswers', 'accuracy', 'completed', 'updatedAt'
+          ])
+          && exists(/databases/$(database)/documents/challengeRooms/$(roomCode))
+          && get(/databases/$(database)/documents/challengeRooms/$(roomCode)).data.status != 'completed'
+          && (
+            (existing().isBot == false && existing().uid == request.auth.uid)
+            ||
+            (existing().isBot == true && get(/databases/$(database)/documents/challengeRooms/$(roomCode)).data.hostId == request.auth.uid)
+          );
+
+        allow delete: if isSignedIn()
+          && isValidRoomCode(roomCode)
+          && isValidId(participantId)
+          && (
+            existing().uid == request.auth.uid
+            || get(/databases/$(database)/documents/challengeRooms/$(roomCode)).data.hostId == request.auth.uid
+          );
+      }
+    }
+
+    match /challengeInvitations/{invitationId} {
+      allow get: if isSignedIn()
+        && isValidId(invitationId)
+        && (
+          existing().senderUid == request.auth.uid
+          || (isEmailVerified() && existing().recipientEmail == authEmail())
+        );
+
+      allow list: if isSignedIn()
+        && (
+          resource.data.senderUid == request.auth.uid
+          || (isEmailVerified() && resource.data.recipientEmail == authEmail())
+        );
+
+      allow create: if isSignedIn()
+        && isValidId(invitationId)
+        && isValidChallengeInvitation(incoming(), invitationId)
+        && incoming().senderUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/challengeRooms/$(incoming().roomCode));
+
+      allow update: if isSignedIn()
+        && isValidId(invitationId)
+        && isValidChallengeInvitation(incoming(), invitationId)
+        && existing().status == 'pending'
+        && incoming().id == existing().id
+        && incoming().roomCode == existing().roomCode
+        && incoming().quizTitle == existing().quizTitle
+        && incoming().senderUid == existing().senderUid
+        && incoming().senderName == existing().senderName
+        && incoming().recipientEmail == existing().recipientEmail
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && (
+          (isEmailVerified() && existing().recipientEmail == authEmail() && incoming().status in ['accepted', 'declined'])
+          ||
+          (existing().senderUid == request.auth.uid && incoming().status == 'cancelled')
+        );
+
+      allow delete: if isSignedIn()
+        && isValidId(invitationId)
+        && (
+          existing().senderUid == request.auth.uid
+          || (isEmailVerified() && existing().recipientEmail == authEmail())
+        );
+    }
+  }
+}

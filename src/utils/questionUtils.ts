@@ -5,10 +5,9 @@ export const QUESTION_TYPE_OPTIONS: Array<{
   label: string;
   desc: string;
 }> = [
-  { id: 'multiple_choice', label: 'Multiple Choice', desc: '4 choices with 1 correct' },
-  { id: 'fill_blank', label: 'Fill in the Blanks', desc: 'Missing keyword tests' },
-  { id: 'identification', label: 'Identification', desc: 'Concept definition recall' },
-  { id: 'scrambled_word', label: 'Scrambled Words', desc: 'Anagram terminology solve' },
+  { id: 'multiple_choice', label: 'Multiple Choice', desc: '4 choices (A-D) with 1 correct' },
+  { id: 'identification', label: 'Identification', desc: 'Type exact term or concept' },
+  { id: 'scrambled_word', label: 'Scrambled Words', desc: 'Interactive letter tiles puzzle' },
 ];
 
 export function formatQuestionTypeLabel(type: QuestionType): string {
@@ -17,7 +16,6 @@ export function formatQuestionTypeLabel(type: QuestionType): string {
 }
 
 export const POINTS_PER_CORRECT = 5;
-export const COINS_PER_CORRECT = 5;
 
 export interface ScrambledTile {
   id: number;
@@ -78,6 +76,7 @@ export function createScrambledTiles(answer: string, seed = ''): ScrambledTile[]
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
+    .replace(/s['’]s\b/g, 's')
     .replace(/['’]s\b/g, 's')
     .replace(/['’]/g, '')
     .replace(/[^\w\s]/g, ' ')
@@ -112,7 +111,7 @@ export function evaluateQuestionAnswer(question: Question, userAnswer?: string):
     return Boolean(compactUser) && compactUser === compactCorrect;
   }
 
-  if (question.type === 'identification' || question.type === 'fill_blank') {
+  if (question.type === 'identification') {
     const normUser = normalizeText(rawUser);
     if (!normUser) return false;
     const variants = getAcceptableShortVariants(question.correctAnswer);

@@ -1,0 +1,576 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private student account profile, reward balances, and study reminder preferences.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Student display name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Student email address (PII, owner-only).",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "avatar": {
+          "type": "string",
+          "description": "Single-letter or short avatar badge.",
+          "minLength": 1,
+          "maxLength": 8
+        },
+        "school": {
+          "type": "string",
+          "description": "School or university name.",
+          "maxLength": 160
+        },
+        "bio": {
+          "type": "string",
+          "description": "Short student study bio or exam goal.",
+          "maxLength": 300
+        },
+        "role": {
+          "type": "string",
+          "enum": ["student", "educator"],
+          "description": "Account role; defaults to student and cannot be self-escalated."
+        },
+        "totalPoints": {
+          "type": "number",
+          "description": "Cumulative quiz points earned (+5 per correct answer)."
+        },
+        "settings": {
+          "type": "object",
+          "description": "Preferences including notifications, theme, and reminderConfig."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "avatar",
+        "role",
+        "totalPoints",
+        "settings",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Saved or AI-generated quiz deck owned by a student, supporting only multiple_choice, identification, and scrambled_word questions.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["Easy", "Medium", "Hard"]
+        },
+        "questions": {
+          "type": "array",
+          "description": "Up to 35 quiz questions (1-30 generated)."
+        },
+        "timesPlayed": {
+          "type": "number"
+        },
+        "studyMaterialId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "studyMaterialSummary": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "updatedDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "title",
+        "description",
+        "category",
+        "difficulty",
+        "questions",
+        "timesPlayed",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StudyMaterial": {
+      "title": "StudyMaterial",
+      "description": "Uploaded study notes and extracted text synced to Firestore (large binary blobs remain cached locally in IndexedDB).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "quizId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["notes", "txt", "pdf", "docx", "image"]
+        },
+        "fileName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "fileSize": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "mimeType": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "textContent": {
+          "type": "string",
+          "maxLength": 120000
+        },
+        "createdDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "updatedDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "title",
+        "sourceType",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ActivityRecord": {
+      "title": "ActivityRecord",
+      "description": "Completed solo practice or multiplayer challenge session record.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "quizId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "quizTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "date": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "score": {
+          "type": "number"
+        },
+        "maxScore": {
+          "type": "number"
+        },
+        "correctCount": {
+          "type": "number"
+        },
+        "totalQuestions": {
+          "type": "number"
+        },
+        "accuracy": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["solo", "challenge"]
+        },
+        "opponentCount": {
+          "type": "number"
+        },
+        "rank": {
+          "type": "number"
+        },
+        "leaderboard": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "ownerId",
+        "quizId",
+        "quizTitle",
+        "date",
+        "timestamp",
+        "score",
+        "maxScore",
+        "correctCount",
+        "totalQuestions",
+        "accuracy",
+        "type",
+        "createdAt"
+      ]
+    },
+    "ChallengeRoom": {
+      "title": "ChallengeRoom",
+      "description": "Real-time multiplayer challenge room holding shared quiz questions and room lifecycle state.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 16,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "quizId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "questions": {
+          "type": "array",
+          "description": "Shared quiz questions snapshot (1-35 items)."
+        },
+        "maxPlayers": {
+          "type": "number"
+        },
+        "timeLimitMinutes": {
+          "type": "number"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["Normal", "Hard"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["waiting", "active", "completed"]
+        },
+        "hostId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "hostName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "hostAvatar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8
+        },
+        "participantIds": {
+          "type": "array",
+          "description": "Bounded list (max 6) of joined participant UIDs."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "code",
+        "title",
+        "quizId",
+        "questions",
+        "maxPlayers",
+        "timeLimitMinutes",
+        "mode",
+        "status",
+        "hostId",
+        "hostName",
+        "hostAvatar",
+        "participantIds",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ChallengeParticipant": {
+      "title": "ChallengeParticipant",
+      "description": "Participant state and live score inside a ChallengeRoom subcollection.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "roomCode": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 16,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "avatar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8
+        },
+        "isHost": {
+          "type": "boolean"
+        },
+        "isBot": {
+          "type": "boolean"
+        },
+        "score": {
+          "type": "number"
+        },
+        "correctAnswers": {
+          "type": "number"
+        },
+        "totalQuestions": {
+          "type": "number"
+        },
+        "accuracy": {
+          "type": "number"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "roomCode",
+        "uid",
+        "name",
+        "avatar",
+        "isHost",
+        "isBot",
+        "score",
+        "correctAnswers",
+        "totalQuestions",
+        "accuracy",
+        "completed",
+        "joinedAt",
+        "updatedAt"
+      ]
+    },
+    "ChallengeInvitation": {
+      "title": "ChallengeInvitation",
+      "description": "Direct challenge invitation sent to a classmate's email for a live room.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "roomCode": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 16,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "quizTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "senderUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "recipientEmail": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "declined", "cancelled"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "roomCode",
+        "quizTitle",
+        "senderUid",
+        "senderName",
+        "recipientEmail",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-only student account document storing PII, reward totals, and reminder preferences."
+    },
+    "/users/{userId}/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/Quiz" },
+      "description": "Student's personal saved and AI-generated quizzes."
+    },
+    "/users/{userId}/studyMaterials/{materialId}": {
+      "schema": { "$ref": "#/entities/StudyMaterial" },
+      "description": "Synced study notes and metadata (oversized binaries kept in local IndexedDB)."
+    },
+    "/users/{userId}/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/ActivityRecord" },
+      "description": "Student's solo practice and multiplayer challenge session history."
+    },
+    "/challengeRooms/{roomCode}": {
+      "schema": { "$ref": "#/entities/ChallengeRoom" },
+      "description": "Shared multiplayer challenge lobby and quiz payload."
+    },
+    "/challengeRooms/{roomCode}/participants/{participantId}": {
+      "schema": { "$ref": "#/entities/ChallengeParticipant" },
+      "description": "Real-time participant scores and completion flags inside a challenge room."
+    },
+    "/challengeInvitations/{invitationId}": {
+      "schema": { "$ref": "#/entities/ChallengeInvitation" },
+      "description": "Direct challenge invitations addressed to a recipient email."
+    }
+  }
+}

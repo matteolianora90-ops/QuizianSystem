@@ -54,8 +54,10 @@ export const WeeklyProgressChart: React.FC<WeeklyProgressChartProps> = ({ activi
       const fallbackAcc =
         activities.length <= 3 && offset >= 1 && offset <= 4 ? [82, 88, 80, 92][offset - 1] : 0;
 
+      const localDateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
       buckets.push({
-        key: d.toISOString().slice(0, 10),
+        key: localDateKey,
         label: dayNames[d.getDay()],
         questionsSolved: realQuestions > 0 ? realQuestions : fallbackQuestions,
         sessions: realSessions > 0 ? realSessions : fallbackQuestions > 0 ? 1 : 0,

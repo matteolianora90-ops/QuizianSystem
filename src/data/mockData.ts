@@ -9,7 +9,6 @@ export const INITIAL_USER: UserProfile = {
   bio: 'Computer Science student • Preparing for Midterm Exams 📚',
   role: 'student',
   totalPoints: 100,
-  coins: 100,
   settings: {
     notifications: true,
     challengeAlerts: true,
@@ -63,8 +62,8 @@ export const INITIAL_QUIZZES: Quiz[] = [
       },
       {
         id: 'is-3',
-        type: 'fill_blank',
-        question: 'Raw facts and figures without context are known as ____, whereas organized and meaningful facts become information.',
+        type: 'identification',
+        question: 'Identify the term for raw facts and figures without context before they are organized into meaningful information.',
         options: [],
         correctAnswer: 'Data',
         explanation: 'Data represents unprocessed symbols and facts, which turn into information when contextualized.',
@@ -109,8 +108,8 @@ export const INITIAL_QUIZZES: Quiz[] = [
       },
       {
         id: 'is-8',
-        type: 'fill_blank',
-        question: 'A ____ is an interconnected group of computers that can share resources and communicate.',
+        type: 'identification',
+        question: 'Identify the interconnected group of computers designed to share resources and communicate.',
         options: [],
         correctAnswer: 'Network',
         explanation: 'A computer network connects multiple devices to share data, files, and internet bandwidth.',
@@ -173,10 +172,10 @@ export const INITIAL_QUIZZES: Quiz[] = [
       },
       {
         id: 'db-3',
-        type: 'fill_blank',
-        question: 'A ____ key in a table refers to the primary key of another table, establishing a relationship between them.',
+        type: 'identification',
+        question: 'Identify the type of relational key in a table that references the primary key of another table to establish a relationship.',
         options: [],
-        correctAnswer: 'Foreign',
+        correctAnswer: 'Foreign Key',
         explanation: 'A foreign key maintains referential integrity between related relational tables.',
       },
       {
@@ -219,8 +218,8 @@ export const INITIAL_QUIZZES: Quiz[] = [
       },
       {
         id: 'db-8',
-        type: 'fill_blank',
-        question: 'An ____ is a data structure that improves the speed of data retrieval operations on a database table.',
+        type: 'identification',
+        question: 'Identify the database data structure (such as a B-tree) that improves the speed of data retrieval operations on a table.',
         options: [],
         correctAnswer: 'Index',
         explanation: 'Indexes (such as B-trees) provide quick lookups, avoiding full table scans.',
@@ -267,10 +266,10 @@ export const INITIAL_QUIZZES: Quiz[] = [
       },
       {
         id: 'hci-3',
-        type: 'fill_blank',
-        question: "____ Law states that the time required to rapidly move to a target area is a function of the ratio between the distance to the target and the width of the target.",
+        type: 'identification',
+        question: 'Identify the HCI law stating that the time required to rapidly move to a target depends on the distance to and width of the target.',
         options: [],
-        correctAnswer: "Fitts's",
+        correctAnswer: "Fitts's Law",
         explanation: "Fitts's Law explains why larger and closer buttons are easier and faster to tap or click.",
       },
       {
@@ -369,7 +368,6 @@ export const INITIAL_ACTIVITIES: ActivityRecord[] = [
     timestamp: Date.now() - 3600000 * 2,
     score: 40,
     maxScore: 50,
-    coinsEarned: 40,
     correctCount: 8,
     totalQuestions: 10,
     accuracy: 80,
@@ -377,9 +375,9 @@ export const INITIAL_ACTIVITIES: ActivityRecord[] = [
     opponentCount: 3,
     rank: 1,
     leaderboard: [
-      { id: 'p-1', name: 'Matteo Llanora', avatar: 'M', score: 40, coins: 40, correctAnswers: 8, totalQuestions: 10, accuracy: 80, completed: true },
-      { id: 'p-2', name: 'Sarah K.', avatar: 'S', score: 35, coins: 35, correctAnswers: 7, totalQuestions: 10, accuracy: 70, completed: true },
-      { id: 'p-3', name: 'Liam M.', avatar: 'L', score: 30, coins: 30, correctAnswers: 6, totalQuestions: 10, accuracy: 60, completed: true },
+      { id: 'p-1', name: 'Matteo Llanora', avatar: 'M', score: 40, correctAnswers: 8, totalQuestions: 10, accuracy: 80, completed: true },
+      { id: 'p-2', name: 'Sarah K.', avatar: 'S', score: 35, correctAnswers: 7, totalQuestions: 10, accuracy: 70, completed: true },
+      { id: 'p-3', name: 'Liam M.', avatar: 'L', score: 30, correctAnswers: 6, totalQuestions: 10, accuracy: 60, completed: true },
     ],
   },
   {
@@ -390,7 +388,6 @@ export const INITIAL_ACTIVITIES: ActivityRecord[] = [
     timestamp: Date.now() - 86400000,
     score: 35,
     maxScore: 40,
-    coinsEarned: 35,
     correctCount: 7,
     totalQuestions: 8,
     accuracy: 88,
@@ -404,7 +401,6 @@ export const INITIAL_ACTIVITIES: ActivityRecord[] = [
     timestamp: Date.now() - 86400000 * 2,
     score: 25,
     maxScore: 25,
-    coinsEarned: 25,
     correctCount: 5,
     totalQuestions: 5,
     accuracy: 100,
@@ -412,8 +408,8 @@ export const INITIAL_ACTIVITIES: ActivityRecord[] = [
     opponentCount: 2,
     rank: 1,
     leaderboard: [
-      { id: 'p-1', name: 'Matteo Llanora', avatar: 'M', score: 25, coins: 25, correctAnswers: 5, totalQuestions: 5, accuracy: 100, completed: true },
-      { id: 'p-4', name: 'David P.', avatar: 'D', score: 20, coins: 20, correctAnswers: 4, totalQuestions: 5, accuracy: 80, completed: true },
+      { id: 'p-1', name: 'Matteo Llanora', avatar: 'M', score: 25, correctAnswers: 5, totalQuestions: 5, accuracy: 100, completed: true },
+      { id: 'p-4', name: 'David P.', avatar: 'D', score: 20, correctAnswers: 4, totalQuestions: 5, accuracy: 80, completed: true },
     ],
   },
 ];

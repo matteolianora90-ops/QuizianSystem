@@ -16,10 +16,8 @@ import {
   CheckCircle2,
   XCircle,
   X,
-  Share2,
-  Coins
+  Share2
 } from 'lucide-react';
-import { COINS_PER_CORRECT } from '../../utils/questionUtils';
 
 export const ResultsScreen: React.FC = () => {
   const { user, lastResult, setActiveScreen, setActiveTab, startGame, exitGame, showToast } = useApp();
@@ -42,8 +40,7 @@ export const ResultsScreen: React.FC = () => {
     );
   }
 
-  const { score, coinsEarned, correctAnswers, totalQuestions, accuracy, leaderboard, quiz, mode, userAnswers, userPlayerId } = lastResult;
-  const sessionCoinsEarned = typeof coinsEarned === 'number' ? coinsEarned : correctAnswers * COINS_PER_CORRECT;
+  const { score, correctAnswers, totalQuestions, accuracy, leaderboard, quiz, mode, userAnswers, userPlayerId } = lastResult;
   const activePlayerId = userPlayerId || user?.id || 'player-user';
 
   const handlePlayAgain = () => {
@@ -57,7 +54,7 @@ export const ResultsScreen: React.FC = () => {
   };
 
   const handleShareResults = () => {
-    const summaryText = `I scored ${score} pts and earned ${sessionCoinsEarned} coins (${accuracy}% accuracy) on "${quiz.title}" with Quizian!`;
+    const summaryText = `I scored ${score} points (${accuracy}% accuracy) on "${quiz.title}" with Quizian!`;
     if (navigator.share) {
       navigator
         .share({
@@ -121,25 +118,15 @@ export const ResultsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Total Points & Coins Earned */}
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-center gap-2.5 tabular-nums">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FFF0E3] text-[#F47A18] text-sm font-extrabold border border-[#F47A18]/20">
-              <Trophy size={16} />
-              <span>+{score} Points</span>
-            </div>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 text-amber-800 text-sm font-extrabold border border-amber-200">
-              <Coins size={16} className="text-amber-600" />
-              <span>+{sessionCoinsEarned} Coins</span>
-            </div>
+        {/* Total Points Earned */}
+        <div className="flex items-center justify-center tabular-nums">
+          <div
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#FFF0E3] text-[#F47A18] text-sm font-extrabold border border-[#F47A18]/20"
+            data-testid="results-total-points"
+          >
+            <Trophy size={16} />
+            <span>+{score} Points Earned</span>
           </div>
-          {user && (
-            <p className="text-xs font-semibold text-[#202B3C]/65 tabular-nums">
-              Account Balance: <strong className="text-[#172337]">{user.totalPoints ?? 0} pts</strong>
-              <span className="mx-1.5">•</span>
-              <strong className="text-amber-700">{user.coins ?? 0} coins</strong>
-            </p>
-          )}
         </div>
 
         {/* LEADERBOARD */}
@@ -195,9 +182,6 @@ export const ResultsScreen: React.FC = () => {
                   <div className="text-right shrink-0 tabular-nums">
                     <span className="text-xs font-extrabold text-[#172337] block">
                       {item.score} pts
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-700 block">
-                      {item.coins ?? item.score} coins
                     </span>
                   </div>
                 </div>

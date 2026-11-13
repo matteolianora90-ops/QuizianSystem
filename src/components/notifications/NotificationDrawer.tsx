@@ -56,8 +56,10 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
           </div>
 
           <button
+            type="button"
+            aria-label="Close notifications"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 transition-colors cursor-pointer shrink-0"
+            className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/60 transition-colors cursor-pointer shrink-0"
           >
             <X size={16} />
           </button>
@@ -94,6 +96,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
 
           <div className="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-[#E8E4DC]/60">
             <button
+              type="button"
               onClick={() => triggerStudyReminder(undefined, undefined, true)}
               className="py-1.5 px-2.5 rounded-lg bg-[#FFF0E3] hover:bg-[#ffe4cc] text-[#F47A18] text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
             >
@@ -101,6 +104,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
               <span>Test Notification Now</span>
             </button>
             <button
+              type="button"
               onClick={() => {
                 onClose();
                 setActiveTab('profile');
@@ -122,16 +126,18 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
             {notifications.length > 0 && (
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={markAllNotificationsAsRead}
-                  className="text-[11px] font-semibold text-[#F47A18] hover:underline flex items-center gap-1"
+                  className="text-[11px] font-semibold text-[#F47A18] hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <CheckCheck size={13} />
                   <span>Mark all read</span>
                 </button>
                 <span className="text-gray-300">•</span>
                 <button
+                  type="button"
                   onClick={clearNotifications}
-                  className="text-[11px] font-semibold text-[#202B3C]/50 hover:text-red-600"
+                  className="text-[11px] font-semibold text-[#202B3C]/50 hover:text-red-600 cursor-pointer"
                 >
                   Clear
                 </button>
@@ -181,10 +187,26 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
                         const quiz = quizzes[0];
                         if (quiz) startGame(quiz, 'solo');
                       }}
-                      className="py-1 px-2.5 rounded-lg bg-[#F47A18] hover:bg-[#e0690f] text-white text-[11px] font-bold flex items-center gap-1 transition-colors"
+                      className="py-1 px-2.5 rounded-lg bg-[#F47A18] hover:bg-[#e0690f] text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       <Play size={10} fill="currentColor" />
                       <span>Review Now</span>
+                    </button>
+                  </div>
+                )}
+
+                {notif.type === 'challenge_alert' && (
+                  <div className="pt-2 pl-4 flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClose();
+                        setActiveTab('challenge');
+                      }}
+                      className="py-1 px-2.5 rounded-lg bg-[#172337] hover:bg-[#202B3C] text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <ExternalLink size={10} />
+                      <span>View Challenge Invite</span>
                     </button>
                   </div>
                 )}

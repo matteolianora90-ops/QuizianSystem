@@ -1,6 +1,5 @@
 export type QuestionType =
   | 'multiple_choice'
-  | 'fill_blank'
   | 'identification'
   | 'scrambled_word';
 
@@ -66,6 +65,7 @@ export interface AppNotification {
   read: boolean;
   type: 'study_reminder' | 'challenge_alert' | 'streak_milestone';
   quizId?: string;
+  roomCode?: string;
 }
 
 export interface UserProfile {
@@ -77,7 +77,6 @@ export interface UserProfile {
   bio?: string;
   role: 'student' | 'educator';
   totalPoints: number;
-  coins: number;
   settings: {
     notifications: boolean;
     challengeAlerts: boolean;
@@ -90,15 +89,16 @@ export interface UserProfile {
 
 export interface ParticipantScore {
   id: string;
+  uid?: string;
   name: string;
   avatar: string;
   score: number;
-  coins?: number;
   correctAnswers: number;
   totalQuestions: number;
   accuracy: number;
   completed: boolean;
   isHost?: boolean;
+  isBot?: boolean;
 }
 
 export interface ActivityRecord {
@@ -109,7 +109,6 @@ export interface ActivityRecord {
   timestamp: number;
   score: number;
   maxScore: number;
-  coinsEarned?: number;
   correctCount: number;
   totalQuestions: number;
   accuracy: number;
@@ -131,6 +130,21 @@ export interface ChallengeRoomState {
   mode: 'Normal' | 'Hard';
   status: 'waiting' | 'active' | 'completed';
   hostId: string;
+  hostName?: string;
+  hostAvatar?: string;
+  participantIds?: string[];
   createdAt: number;
   participants: ParticipantScore[];
+}
+
+export interface ChallengeInvitation {
+  id: string;
+  roomCode: string;
+  quizTitle: string;
+  senderUid: string;
+  senderName: string;
+  recipientEmail: string;
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  createdAt: number;
+  updatedAt: number;
 }

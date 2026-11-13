@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Bell, Coins } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { NotificationDrawer } from '../notifications/NotificationDrawer';
 import { BrandLogo } from './BrandLogo';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -36,20 +36,6 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle, actionButton })
           </button>
 
           <div className="flex items-center gap-2 shrink-0">
-            {user && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('profile')}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100/80 border border-amber-200/80 text-xs font-extrabold text-amber-800 transition-colors cursor-pointer tabular-nums"
-                title="Account Points & Coins Balance"
-                data-testid="header-wallet-pill"
-              >
-                <Coins size={14} className="text-amber-600 shrink-0" />
-                <span>{user.coins ?? 0}</span>
-                <span className="text-amber-800/35 hidden sm:inline">|</span>
-                <span className="text-[#F47A18] hidden sm:inline">{user.totalPoints ?? 0} pts</span>
-              </button>
-            )}
             <div className="md:hidden">
               <PWAInstallButton variant="compact" />
             </div>

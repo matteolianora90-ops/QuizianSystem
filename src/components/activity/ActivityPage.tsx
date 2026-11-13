@@ -9,8 +9,7 @@ import {
   BookOpen,
   Trash2,
   Eye,
-  X,
-  Coins
+  X
 } from 'lucide-react';
 
 export const ActivityPage: React.FC = () => {
@@ -64,6 +63,7 @@ export const ActivityPage: React.FC = () => {
         actionButton={
           activities.length > 0 ? (
             <button
+              type="button"
               onClick={clearActivities}
               className="py-2 px-3 rounded-xl border border-[#E8E4DC] hover:bg-red-50 hover:text-red-600 text-xs font-semibold text-[#202B3C]/70 flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Clear History"
@@ -121,6 +121,7 @@ export const ActivityPage: React.FC = () => {
       {/* Filter Chips */}
       <div className="flex flex-wrap items-center gap-2">
         <button
+          type="button"
           onClick={() => setFilterType('all')}
           className={`py-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             filterType === 'all'
@@ -131,6 +132,7 @@ export const ActivityPage: React.FC = () => {
           All Activities ({activities.length})
         </button>
         <button
+          type="button"
           onClick={() => setFilterType('challenge')}
           className={`py-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             filterType === 'challenge'
@@ -141,6 +143,7 @@ export const ActivityPage: React.FC = () => {
           Challenges ({activities.filter((a) => a.type === 'challenge').length})
         </button>
         <button
+          type="button"
           onClick={() => setFilterType('solo')}
           className={`py-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             filterType === 'solo'
@@ -212,11 +215,6 @@ export const ActivityPage: React.FC = () => {
                         {act.score} pts
                       </span>
                       <span className="text-[#202B3C]/40">•</span>
-                      <span className="font-bold text-amber-700 inline-flex items-center gap-1">
-                        <Coins size={12} className="text-amber-600" />
-                        {act.coinsEarned ?? act.correctCount * 5} coins
-                      </span>
-                      <span className="text-[#202B3C]/40">•</span>
                       <span className="text-[#202B3C]/60">
                         {act.correctCount} / {act.totalQuestions} questions correct
                       </span>
@@ -226,6 +224,7 @@ export const ActivityPage: React.FC = () => {
 
                 <div className="flex items-center gap-2 self-stretch sm:self-center shrink-0">
                   <button
+                    type="button"
                     onClick={() => setInspectingActivity(act)}
                     className="flex-1 sm:flex-initial py-2 px-3 rounded-xl border border-[#E8E4DC] hover:bg-[#F7F4EF] text-xs font-semibold text-[#202B3C] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
@@ -233,6 +232,7 @@ export const ActivityPage: React.FC = () => {
                     <span>Breakdown</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleRetryActivity(act)}
                     className="flex-1 sm:flex-initial py-2 px-3.5 rounded-xl bg-[#F47A18] hover:bg-[#e0690f] text-white text-xs font-bold transition-colors cursor-pointer"
                   >
@@ -260,25 +260,21 @@ export const ActivityPage: React.FC = () => {
                 <p className="text-xs text-[#202B3C]/60">{inspectingActivity.date}</p>
               </div>
               <button
+                type="button"
+                aria-label="Close session details"
                 onClick={() => setInspectingActivity(null)}
-                className="w-8 h-8 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 shrink-0 cursor-pointer"
+                className="w-9 h-9 rounded-full bg-[#F7F4EF] hover:bg-[#E8E4DC] flex items-center justify-center text-[#202B3C]/70 shrink-0 cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center tabular-nums">
+            <div className="grid grid-cols-3 gap-2.5 text-center tabular-nums">
               <div className="p-3 rounded-2xl bg-[#F7F4EF]">
                 <div className="text-lg font-bold text-[#172337]">
                   {inspectingActivity.score}
                 </div>
                 <div className="text-[10px] uppercase font-bold text-[#202B3C]/60">Points</div>
-              </div>
-              <div className="p-3 rounded-2xl bg-amber-50 text-amber-800">
-                <div className="text-lg font-bold">
-                  {inspectingActivity.coinsEarned ?? inspectingActivity.correctCount * 5}
-                </div>
-                <div className="text-[10px] uppercase font-bold">Coins</div>
               </div>
               <div className="p-3 rounded-2xl bg-[#239B70]/10 text-[#239B70]">
                 <div className="text-lg font-bold">
@@ -318,6 +314,7 @@ export const ActivityPage: React.FC = () => {
             )}
 
             <button
+              type="button"
               onClick={() => setInspectingActivity(null)}
               className="w-full py-2.5 rounded-xl bg-[#172337] text-white font-bold text-xs cursor-pointer"
             >
